@@ -12,6 +12,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add a CI workflow for type-checking, build, and tests.
 - [x] Add a CI integration test that launches the VS Code Extension Development Host and verifies activation, core command registration, and safe default settings.
 - [x] Exercise the OpenAI-compatible model adapter and agent loop against a local deterministic mock server, including approved and denied tool calls.
+- [x] Exercise MCP Streamable HTTP connection and discovery against a local SDK server, forward the discovered schema through the model adapter, and verify allow/deny execution boundaries.
 - [ ] Verify interactively in the VS Code Extension Development Host.
 
 ## Phase 2 — Model connectivity (implementation in this PR)
