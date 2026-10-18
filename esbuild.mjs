@@ -3,12 +3,12 @@ import esbuild from "esbuild";
 const watch = process.argv.includes("--watch");
 
 const options = {
-  entryPoints: ["src/extension.ts"],
+  entryPoints: ["src/extension.ts", "src/modelClient.ts"],
   bundle: true,
   platform: "node",
   format: "cjs",
   target: "node18",
-  outfile: "dist/extension.js",
+  outdir: "dist",
   external: ["vscode"],
   sourcemap: true,
   minify: false,
