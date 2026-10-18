@@ -3,6 +3,12 @@ import Ajv, { ValidateFunction } from "ajv";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  PromptListChangedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+  ToolListChangedNotificationSchema
+} from "@modelcontextprotocol/sdk/types.js";
 import type { AgentToolDefinition } from "./agentRuntime";
 
 export interface StdioMcpServerConfig {
@@ -37,6 +43,15 @@ export interface McpPromptSummary {
   name: string;
   description: string;
   arguments: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
+export type McpNotificationKind = "resource-updated" | "resources-changed" | "prompts-changed" | "tools-changed";
+
+export interface McpNotification {
+  serverName: string;
+  kind: McpNotificationKind;
+  uri?: string;
+  receivedAt: string;
 }
 
 interface ConnectedServer {
@@ -138,8 +153,34 @@ export function createMcpToolName(serverName: string, toolName: string): string 
 export class McpManager {
   private readonly connected = new Map<string, ConnectedServer>();
   private readonly connectionErrors = new Map<string, string>();
+  private readonly recentNotifications: McpNotification[] = [];
 
-  constructor(private readonly getBearerToken: (serverName: string) => Promise<string | undefined>) {}
+  constructor(
+    private readonly getBearerToken: (serverName: string) => Promise<string | undefined>,
+    private readonly onNotification?: (notification: McpNotification) => void
+  ) {}
+
+  getRecentNotifications(): McpNotification[] {
+    return this.recentNotifications.map((notification) => ({ ...notification }));
+  }
+
+  private recordNotification(serverName: string, kind: McpNotificationKind, rawUri?: string): void {
+    let uri: string | undefined;
+    if (rawUri) {
+      try {
+        const parsed = new URL(rawUri);
+        parsed.search = "";
+        parsed.hash = "";
+        uri = parsed.toString().slice(0, 4_000);
+      } catch {
+        uri = rawUri.split(/[?#]/, 1)[0].slice(0, 4_000);
+      }
+    }
+    const notification: McpNotification = { serverName, kind, ...(uri ? { uri } : {}), receivedAt: new Date().toISOString() };
+    this.recentNotifications.push(notification);
+    if (this.recentNotifications.length > 100) this.recentNotifications.splice(0, this.recentNotifications.length - 100);
+    try { this.onNotification?.({ ...notification }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
+  }
 
   getConnectedNames(): string[] {
     return [...this.connected.keys()].sort();
@@ -171,7 +212,19 @@ export class McpManager {
     }
     if (this.connected.has(serverName)) throw new Error(`MCP server "${serverName}" is already connected.`);
     const config = parseMcpServerConfig(rawConfig);
-    const client = new Client({ name: "ai-chatbox", version: "0.4.0" });
+    const client = new Client({ name: "ai-chatbox", version: "0.5.0" });
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
+      this.recordNotification(serverName, "resource-updated", notification.params.uri);
+    });
+    client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
+      this.recordNotification(serverName, "resources-changed");
+    });
+    client.setNotificationHandler(PromptListChangedNotificationSchema, async () => {
+      this.recordNotification(serverName, "prompts-changed");
+    });
+    client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      this.recordNotification(serverName, "tools-changed");
+    });
     let transport: StdioClientTransport | StreamableHTTPClientTransport;
 
     if (config.transport === "stdio") {
