@@ -154,7 +154,7 @@ async function executeWorkflowRun(
     } else {
       const decision = await vscode.window.showWarningMessage(
         `${run.workflow.name}\nApproval required: ${step.title}`,
-        { modal: true, detail: `${step.prompt}\n\nApproving this workflow checkpoint does not grant permission to run any tool. Tool calls still require their own approval.` },
+        { modal: true, detail: `${step.prompt}\n\n${step.onDeny === "continue" ? "If denied, this workflow is explicitly configured to continue to conditional follow-up steps." : "Denial cancels this workflow."}\nApproving this workflow checkpoint does not grant permission to run any tool. Tool calls still require their own approval.` },
         "Approve and Continue",
         "Deny Workflow"
       );

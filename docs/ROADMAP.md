@@ -71,7 +71,8 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add opt-in, bounded workflow file loading from workspace and user storage, plus a native VS Code command UI for instruction and approval steps.
 - [x] Keep workflow approval separate from per-tool approval; workflows do not execute tools or arbitrary code.
 - [x] Integrate host-generated workflow progress into the chat webview and persist/resume validated run snapshots.
-- [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
+- [x] Add declarative workflow conditions based on prior step outcomes, explicit skipped-step records, and opt-in continuation after approval denial.
+- [ ] Add bounded retry policies after conditional workflow behavior is exercised.
 - [x] Add opt-in local Markdown/text knowledge indexing and bounded lexical retrieval into request-scoped agent context.
 - [x] Improve lexical ranking by ignoring common stopwords and requiring exact token matches; add regression tests for natural-language queries and substring false positives.
 - [ ] Add richer source providers and optional semantic/vector retrieval.

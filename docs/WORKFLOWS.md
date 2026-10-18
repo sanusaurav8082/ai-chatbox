@@ -82,3 +82,24 @@ This milestone is a basic host-side execution UI, not an LLM-driven workflow pla
 ## Saved run behavior
 
 Run persistence is separate from conversation persistence. It stores workflow definitions and progress in VS Code extension global state so a run can be resumed after restarting VS Code. The store validates each snapshot on read, checks status/step/outcome consistency, clones nested data, and enforces a 10-run / 200 KB bound. Only runs in `running` or `awaiting-approval` state appear in the resume picker. A resumed run uses its immutable saved definition, not a newly loaded file with the same ID. Workflow approval remains independent of per-tool approval.
+
+
+## Conditional steps
+
+A step may include an optional `condition` that references an earlier step by ID and compares its recorded outcome. Conditions are declarative JSON; they do not evaluate expressions or execute code.
+
+```json
+{
+  "id": "notify-on-denial",
+  "type": "instruction",
+  "title": "Record the decision",
+  "instructions": "Record the denied release decision and notify the release owner.",
+  "condition": { "stepId": "release-approval", "outcome": "denied" }
+}
+```
+
+The allowed expected outcomes are `completed` for instruction steps and `approved` or `denied` for approval steps. Conditions must reference an earlier step, and the outcome must be compatible with that step's type. If a condition does not match, the runtime records the step as `skipped` and advances; skipped steps remain visible in run outcomes and are persisted with the run snapshot.
+
+Approval steps cancel the workflow on denial by default. To deliberately support a denial branch, set `"onDeny": "continue"` on that approval step. This is an explicit opt-in: the denial is recorded, then subsequent conditions may route to a denial-specific instruction. A denial branch does not grant tool permissions; tools remain subject to per-invocation approval. Use the default cancel behavior unless continuing after a denied checkpoint is part of the reviewed procedure.
+
+The runtime validates condition references and types when loading a manifest, and saved-run validation checks skipped outcomes against the saved workflow definition. This feature supports only simple prior-outcome comparisons; it does not support arbitrary expressions, loops, or retries.
