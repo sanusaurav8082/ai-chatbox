@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
- > **Current status: Phase 4 — agent tool-call integration.** OpenAI-compatible structured tool calls now connect to the agent runtime. The chat UI displays requested arguments and requires explicit per-call approval. The first built-in tool lists workspace file paths (read-only, maximum 100). MCP integration follows in a later phase.
+> **Current status: Phase 4 — agent tool-call integration.** OpenAI-compatible structured tool calls now connect to the agent runtime. The chat UI displays requested arguments and requires explicit per-call approval. The first built-in tool lists workspace file paths (read-only, maximum 100). MCP integration follows in a later phase.
 
 ## Current features
 
