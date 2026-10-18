@@ -449,6 +449,13 @@ function renderApproval(message) {
   warning.className = "approval-warning";
   warning.textContent = "Review the requested action and arguments before allowing it. Approval allows this invocation only.";
   card.appendChild(warning);
+  const decisionStatus = document.createElement("div");
+  decisionStatus.className = "tool-status";
+  decisionStatus.id = "approval-status-" + String(message.toolCallId).replace(/[^a-zA-Z0-9_-]/g, "");
+  decisionStatus.setAttribute("role", "status");
+  decisionStatus.setAttribute("aria-live", "polite");
+  decisionStatus.textContent = "Waiting for your decision.";
+  card.setAttribute("aria-describedby", decisionStatus.id);
   const actions = document.createElement("div");
   actions.className = "tool-actions";
   const approve = document.createElement("button");
@@ -463,13 +470,16 @@ function renderApproval(message) {
   const decide = (decision) => {
     approve.disabled = true;
     deny.disabled = true;
+    decisionStatus.textContent = decision === "allow"
+      ? "Approved once. The tool may now run."
+      : "Denied. The tool will not run.";
     announce(decision === "allow" ? "Tool invocation approved once." : "Tool invocation denied.");
     vscode.postMessage({ type: "toolDecision", toolCallId: message.toolCallId, decision });
   };
   approve.addEventListener("click", () => decide("allow"));
   deny.addEventListener("click", () => decide("deny"));
   actions.append(approve, deny);
-  card.appendChild(actions);
+  card.append(decisionStatus, actions);
   messages.appendChild(card);
   messages.scrollTop = messages.scrollHeight;
   announce("Approval required for tool " + message.name + ". Review its arguments, then approve once or deny.");
