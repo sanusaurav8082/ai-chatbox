@@ -154,6 +154,11 @@
             ]
           }
         },
+        "aiChatbox.skillsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Load JSON skills from .ai-chatbox/skills in open workspaces and the AI Chatbox user storage directory, then include matching instructions in model context. Skill instructions are untrusted text."
+        },
         "aiChatbox.persistConversation": {
           "type": "boolean",
           "default": false,
