@@ -145,7 +145,6 @@ export class ChatView {
           text: "The model returned no text. Check the selected model and endpoint."
         } satisfies ModelUiMessage);
       }
-      await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown model request failure.";
       ChatView.conversation = ChatView.conversation.filter(
@@ -157,6 +156,7 @@ export class ChatView {
         text: message
       } satisfies ModelUiMessage);
     } finally {
+      await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
       if (ChatView.activeRequest === controller) {
         ChatView.activeRequest = undefined;
       }
