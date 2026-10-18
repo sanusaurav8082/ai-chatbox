@@ -78,6 +78,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
   if (signal.aborted) controller.abort();
 
   try {
+    if (signal.aborted) throw new Error("Request cancelled.");
     const response = await (options.fetchImpl ?? fetch)(endpoint, {
       method: "POST",
       headers: {
