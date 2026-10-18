@@ -78,7 +78,10 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [ ] Add richer source providers and optional semantic/vector retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
 
-- [ ] Add richer source providers and optional semantic/vector retrieval.\n- [ ] Document extension interfaces and compatibility guarantees.\n\n## Definition of done for a milestone
+- [ ] Add richer source providers and optional semantic/vector retrieval.
+- [ ] Document extension interfaces and compatibility guarantees.
+
+## Definition of done for a milestone
 
 - Type-check and tests pass.
 - Security boundaries are documented.
