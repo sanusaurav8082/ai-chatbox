@@ -26,6 +26,19 @@ export interface McpToolSummary {
   inputSchema: Record<string, unknown>;
 }
 
+export interface McpResourceSummary {
+  uri: string;
+  name: string;
+  description: string;
+  mimeType?: string;
+}
+
+export interface McpPromptSummary {
+  name: string;
+  description: string;
+  arguments: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
 interface ConnectedServer {
   name: string;
   config: McpServerConfig;
@@ -38,6 +51,10 @@ const MAX_SERVER_NAME_LENGTH = 48;
 const MAX_ARGS = 100;
 const MAX_ENV_ENTRIES = 100;
 const MAX_TOOL_PAGES = 20;
+const MAX_RESOURCE_PAGES = 20;
+const MAX_PROMPT_PAGES = 20;
+const MAX_MCP_ITEMS = 500;
+const MAX_RESOURCE_TEXT = 20_000;
 const TOOL_CALL_TIMEOUT_MS = 30_000;
 const ajv = new Ajv({ allErrors: true, strict: false });
 
@@ -226,6 +243,103 @@ export class McpManager {
 
   async disconnectAll(): Promise<void> {
     await Promise.all([...this.connected.keys()].map((name) => this.disconnect(name).catch(() => undefined)));
+  }
+
+  async listResources(serverName: string): Promise<McpResourceSummary[]> {
+    const server = this.requireConnectedServer(serverName);
+    const resources: McpResourceSummary[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_RESOURCE_PAGES; page += 1) {
+      const result = await server.client.listResources(cursor ? { cursor } : undefined);
+      for (const resource of result.resources) {
+        resources.push({
+          uri: String(resource.uri).slice(0, 4_000),
+          name: String(resource.name ?? resource.uri).slice(0, 500),
+          description: String(resource.description ?? "").slice(0, 2_000),
+          ...(resource.mimeType ? { mimeType: String(resource.mimeType).slice(0, 200) } : {})
+        });
+        if (resources.length > MAX_MCP_ITEMS) throw new Error("MCP server exposes more than 500 resources; refusing to list them.");
+      }
+      cursor = result.nextCursor;
+      if (!cursor) return resources;
+      if (page === MAX_RESOURCE_PAGES - 1) throw new Error("MCP resource listing exceeded the pagination limit.");
+    }
+    return resources;
+  }
+
+  async readResource(serverName: string, uri: string): Promise<Array<{ uri: string; mimeType?: string; text?: string; note?: string }>> {
+    const server = this.requireConnectedServer(serverName);
+    if (typeof uri !== "string" || !uri.trim() || uri.length > 4_000) throw new Error("MCP resource URI must be a non-empty string up to 4000 characters.");
+    const result = await server.client.readResource({ uri });
+    let remaining = MAX_RESOURCE_TEXT;
+    return result.contents.slice(0, 20).map((item) => {
+      const normalized: { uri: string; mimeType?: string; text?: string; note?: string } = {
+        uri: String(item.uri).slice(0, 4_000),
+        ...(item.mimeType ? { mimeType: String(item.mimeType).slice(0, 200) } : {})
+      };
+      if ("text" in item && typeof item.text === "string") {
+        normalized.text = item.text.slice(0, remaining);
+        remaining -= normalized.text.length;
+        if (item.text.length > normalized.text.length) normalized.note = "Resource text truncated by AI Chatbox size limit.";
+      } else {
+        normalized.note = "Binary resource content is not rendered by AI Chatbox.";
+      }
+      if (remaining <= 0) normalized.note = "Resource output reached the 20000-character limit.";
+      return normalized;
+    });
+  }
+
+  async listPrompts(serverName: string): Promise<McpPromptSummary[]> {
+    const server = this.requireConnectedServer(serverName);
+    const prompts: McpPromptSummary[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_PROMPT_PAGES; page += 1) {
+      const result = await server.client.listPrompts(cursor ? { cursor } : undefined);
+      for (const prompt of result.prompts) {
+        prompts.push({
+          name: String(prompt.name).slice(0, 500),
+          description: String(prompt.description ?? "").slice(0, 2_000),
+          arguments: (prompt.arguments ?? []).slice(0, 50).map((argument) => ({
+            name: String(argument.name).slice(0, 200),
+            ...(argument.description ? { description: String(argument.description).slice(0, 1_000) } : {}),
+            ...(argument.required !== undefined ? { required: argument.required === true } : {})
+          }))
+        });
+        if (prompts.length > MAX_MCP_ITEMS) throw new Error("MCP server exposes more than 500 prompts; refusing to list them.");
+      }
+      cursor = result.nextCursor;
+      if (!cursor) return prompts;
+      if (page === MAX_PROMPT_PAGES - 1) throw new Error("MCP prompt listing exceeded the pagination limit.");
+    }
+    return prompts;
+  }
+
+  async getPrompt(serverName: string, name: string, args: Record<string, string> = {}): Promise<Array<{ role: string; text: string }>> {
+    const server = this.requireConnectedServer(serverName);
+    if (typeof name !== "string" || !name.trim() || name.length > 500) throw new Error("MCP prompt name is invalid.");
+    if (!isRecord(args) || Object.keys(args).length > 50 ||
+        Object.entries(args).some(([key, value]) => !key || key.length > 200 || typeof value !== "string" || value.length > 4_000)) {
+      throw new Error("MCP prompt arguments must be at most 50 string values (4000 characters each).");
+    }
+    const serialized = JSON.stringify(args);
+    if (serialized.length > 20_000) throw new Error("MCP prompt arguments exceed 20000 characters.");
+    const result = await server.client.getPrompt({ name, arguments: args });
+    let remaining = MAX_RESOURCE_TEXT;
+    return (result.messages ?? []).slice(0, 20).map((message) => {
+      const content = message.content;
+      let text = "";
+      if (content && typeof content === "object" && "text" in content && typeof content.text === "string") text = content.text;
+      else text = "[Non-text prompt content omitted.]";
+      const bounded = text.slice(0, remaining);
+      remaining -= bounded.length;
+      return { role: String(message.role).slice(0, 40), text: bounded };
+    });
+  }
+
+  private requireConnectedServer(serverName: string): ConnectedServer {
+    const server = this.connected.get(serverName);
+    if (!server) throw new Error(`MCP server "${serverName}" is not connected.`);
+    return server;
   }
 
   getAgentTools(): AgentToolDefinition[] {

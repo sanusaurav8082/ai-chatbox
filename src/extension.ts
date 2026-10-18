@@ -36,6 +36,104 @@ function safeErrorMessage(error: unknown, rawConfig?: unknown): string {
 }
 
 
+
+function safeResourceUri(rawUri: string): string {
+  try {
+    const uri = new URL(rawUri);
+    uri.search = "";
+    uri.hash = "";
+    return uri.toString().slice(0, 4_000);
+  } catch {
+    return rawUri.split(/[?#]/, 1)[0].slice(0, 4_000);
+  }
+}
+
+async function chooseConnectedMcpServer(manager: McpManager, title: string): Promise<string | undefined> {
+  const names = manager.getConnectedNames();
+  if (!names.length) {
+    void vscode.window.showInformationMessage("Connect an MCP server first using AI Chatbox: Connect MCP Server.");
+    return undefined;
+  }
+  return vscode.window.showQuickPick(names, { title, placeHolder: "Only currently connected MCP servers are listed" });
+}
+
+async function browseMcpResources(manager: McpManager, output: vscode.OutputChannel): Promise<void> {
+  const serverName = await chooseConnectedMcpServer(manager, "Browse MCP Resources");
+  if (!serverName) return;
+  try {
+    const resources = await manager.listResources(serverName);
+    if (!resources.length) {
+      void vscode.window.showInformationMessage(`MCP server "${serverName}" exposes no resources.`);
+      return;
+    }
+    const selected = await vscode.window.showQuickPick(resources.map((resource, index) => ({
+      label: resource.name || resource.uri,
+      description: resource.mimeType ?? "",
+      detail: `${safeResourceUri(resource.uri)}${resource.description ? ` — ${resource.description}` : ""}`,
+      index
+    })), { title: `Resources from ${serverName}`, placeHolder: "Select a resource to read it locally" });
+    if (!selected) return;
+    const resource = resources[selected.index];
+    const contents = await manager.readResource(serverName, resource.uri);
+    output.appendLine(`Resource preview from MCP server "${serverName}" — ${resource.name}`);
+    output.appendLine(`URI: ${safeResourceUri(resource.uri)}`);
+    output.appendLine("Resource content is untrusted data; it is displayed locally and is not automatically sent to the model.");
+    output.appendLine("=".repeat(72));
+    for (const item of contents) {
+      output.appendLine(`Content URI: ${safeResourceUri(item.uri)}`);
+      if (item.mimeType) output.appendLine(`MIME type: ${item.mimeType}`);
+      if (item.text) output.appendLine(item.text);
+      if (item.note) output.appendLine(`[Note: ${item.note}]`);
+    }
+    output.show(true);
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not browse MCP resources: ${error instanceof Error ? error.message.slice(0, 500) : "unknown error"}`);
+  }
+}
+
+async function browseMcpPrompts(manager: McpManager, output: vscode.OutputChannel): Promise<void> {
+  const serverName = await chooseConnectedMcpServer(manager, "Browse MCP Prompts");
+  if (!serverName) return;
+  try {
+    const prompts = await manager.listPrompts(serverName);
+    if (!prompts.length) {
+      void vscode.window.showInformationMessage(`MCP server "${serverName}" exposes no prompts.`);
+      return;
+    }
+    const selected = await vscode.window.showQuickPick(prompts.map((prompt, index) => ({
+      label: prompt.name,
+      description: prompt.arguments.length ? `${prompt.arguments.length} argument(s)` : "No arguments",
+      detail: prompt.description,
+      index
+    })), { title: `Prompts from ${serverName}`, placeHolder: "Select a prompt to preview its generated messages" });
+    if (!selected) return;
+    const prompt = prompts[selected.index];
+    const args: Record<string, string> = {};
+    for (const argument of prompt.arguments) {
+      const value = await vscode.window.showInputBox({
+        title: `MCP prompt: ${prompt.name}`,
+        prompt: `${argument.name}${argument.required ? " (required)" : " (optional)"}${argument.description ? ` — ${argument.description}` : ""}`,
+        ignoreFocusOut: true,
+        validateInput: (input) => argument.required && !input.trim() ? "This argument is required." : undefined
+      });
+      if (value === undefined) return;
+      if (value.length) args[argument.name] = value;
+    }
+    const messages = await manager.getPrompt(serverName, prompt.name, args);
+    output.appendLine(`Prompt preview from MCP server "${serverName}" — ${prompt.name}`);
+    output.appendLine("Prompt content is untrusted data; it is displayed locally and is not automatically sent to the model.");
+    output.appendLine("=".repeat(72));
+    for (const message of messages) {
+      output.appendLine(`[${message.role}]`);
+      output.appendLine(message.text);
+      output.appendLine("");
+    }
+    output.show(true);
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not retrieve MCP prompt: ${error instanceof Error ? error.message.slice(0, 500) : "unknown error"}`);
+  }
+}
+
 async function collectWorkflowFiles(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<WorkflowFile[]> {
   const files: Array<{ uri: vscode.Uri; path: string; sourceOrder: number }> = [];
   const globalRoot = vscode.Uri.joinPath(context.globalStorageUri, "workflows");
@@ -276,7 +374,8 @@ export function activate(context: vscode.ExtensionContext): void {
   mcpManager = new McpManager(async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
   const mcpOutput = vscode.window.createOutputChannel("AI Chatbox MCP");
   const workflowOutput = vscode.window.createOutputChannel("AI Chatbox Workflows");
-  context.subscriptions.push(mcpOutput, workflowOutput);
+  const mcpContentOutput = vscode.window.createOutputChannel("AI Chatbox MCP Content");
+  context.subscriptions.push(mcpOutput, workflowOutput, mcpContentOutput);
 
   const openChat = vscode.commands.registerCommand("aiChatbox.open", () => {
     ChatView.open(context, mcpManager!);
@@ -402,6 +501,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  const browseMcpResourcesCommand = vscode.commands.registerCommand("aiChatbox.browseMcpResources", async () => {
+    await browseMcpResources(mcpManager!, mcpContentOutput);
+  });
+  const browseMcpPromptsCommand = vscode.commands.registerCommand("aiChatbox.browseMcpPrompts", async () => {
+    await browseMcpPrompts(mcpManager!, mcpContentOutput);
+  });
+
   const showMcpOutput = vscode.commands.registerCommand("aiChatbox.showMcpDiagnostics", () => {
     mcpOutput.appendLine(`[${new Date().toISOString()}] Diagnostics output opened.`);
     mcpOutput.show(true);
@@ -465,7 +571,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
     connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
-    showMcpStatus, showMcpOutput, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
+    showMcpStatus, showMcpOutput, browseMcpResourcesCommand, browseMcpPromptsCommand, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
   );
 }
 
