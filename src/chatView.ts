@@ -9,6 +9,7 @@ import {
 } from "./agentRuntime";
 import { createAgentModelAdapter } from "./agentModelAdapter";
 import { ModelConfig, ModelProvider } from "./modelClient";
+import { McpManager } from "./mcpManager";
 
 export const OPENAI_API_KEY_SECRET = "aiChatbox.openaiApiKey";
 
@@ -39,7 +40,7 @@ export class ChatView {
     abort: () => void;
   }>();
 
-  static open(context: vscode.ExtensionContext): void {
+  static open(context: vscode.ExtensionContext, mcpManager: McpManager): void {
     if (ChatView.currentPanel) {
       ChatView.currentPanel.reveal(vscode.ViewColumn.One);
       return;
@@ -63,7 +64,7 @@ export class ChatView {
         if (showWelcome) {
           await panel.webview.postMessage({
             type: "assistant",
-            text: "Welcome to AI Chatbox. Tool calls are shown for review and require your approval before they run. Choose a local OpenAI-compatible endpoint in settings, or switch aiChatbox.provider to openai and set your key using “AI Chatbox: Set OpenAI API Key”."
+            text: "Welcome to AI Chatbox. Tool calls require your approval before they run. Configure aiChatbox.mcpServers and use “AI Chatbox: Connect MCP Server” to connect a reviewed MCP server. Choose a local OpenAI-compatible model in settings, or set an OpenAI key with “AI Chatbox: Set OpenAI API Key”."
           });
         }
         return;
@@ -94,7 +95,7 @@ export class ChatView {
           await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
           return;
         }
-        await ChatView.runAgentRequest(context, panel, text);
+        await ChatView.runAgentRequest(context, panel, text, mcpManager);
       }
     }, undefined, context.subscriptions);
 
@@ -115,7 +116,8 @@ export class ChatView {
   private static async runAgentRequest(
     context: vscode.ExtensionContext,
     panel: vscode.WebviewPanel,
-    text: string
+    text: string,
+    mcpManager: McpManager
   ): Promise<void> {
     const controller = new AbortController();
     ChatView.activeRequest = controller;
@@ -161,6 +163,8 @@ export class ChatView {
           };
         }
       }];
+
+      tools.push(...mcpManager.getAgentTools());
 
       const permissions = new CallbackPermissionService(async (request) =>
         ChatView.requestToolApproval(panel, request, controller.signal)
@@ -290,7 +294,7 @@ button:focus-visible, textarea:focus-visible { outline:1px solid var(--vscode-fo
 <main class="app">
 <header><h1>AI Chatbox</h1><div class="sub">Agent chat · Tool execution requires explicit approval</div></header>
 <section id="messages" aria-live="polite" aria-label="Conversation"></section>
-<div class="hint">Configure aiChatbox.provider, aiChatbox.modelId and aiChatbox.baseUrl in Settings. Use the command palette to manage your OpenAI API key.</div>
+<div class="hint">Configure model settings and aiChatbox.mcpServers. Connect MCP servers through the Command Palette; each tool call still requires approval.</div>
 <form id="composer">
 <textarea id="prompt" aria-label="Message" placeholder="Ask something..." maxlength="20000" required></textarea>
 <button id="send" type="submit">Send</button><button id="cancel" type="button">Stop</button>
