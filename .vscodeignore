@@ -1,0 +1,21 @@
+# Development sources and tooling are not required in the installed extension
+.github/**
+.vscode/**
+src/**
+test/**
+docs/**
+node_modules/**
+esbuild.mjs
+tsconfig.json
+.gitignore
+.vscodeignore
+
+# esbuild emits separate entry points for unit tests; the extension uses bundled extension.js
+dist/modelClient.js
+dist/modelClient.js.map
+dist/agentRuntime.js
+dist/agentRuntime.js.map
+dist/agentModelAdapter.js
+dist/agentModelAdapter.js.map
+dist/mcpManager.js
+dist/mcpManager.js.map
