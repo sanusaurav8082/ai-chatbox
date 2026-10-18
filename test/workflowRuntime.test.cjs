@@ -42,7 +42,7 @@ test("validates conditions only when they reference a compatible earlier step", 
   assert.throws(() => parseWorkflowManifest({ ...conditional, steps: [
     deployWorkflow.steps[1],
     { ...deployWorkflow.steps[0], condition: { stepId: "release-approval", outcome: "completed" } }
-  ] }), /earlier step/i);
+  ] }), /does not match/i);
   assert.throws(() => parseWorkflowManifest({ ...conditional, steps: [
     deployWorkflow.steps[0],
     { ...deployWorkflow.steps[1], condition: { stepId: "inspect", outcome: "approved" } }
@@ -114,15 +114,16 @@ test("skips conditional steps when their prerequisite outcome does not match", (
     deployWorkflow.steps[0],
     deployWorkflow.steps[1],
     { id: "post-approval", type: "instruction", title: "Post approval", instructions: "Continue only after approval.", condition: { stepId: "release-approval", outcome: "approved" } },
-    { id: "fallback", type: "instruction", title: "Fallback", instructions: "Record that release approval was denied.", condition: { stepId: "release-approval", outcome: "approved" } }
+    { id: "fallback", type: "instruction", title: "Fallback", instructions: "Record that release approval was denied.", condition: { stepId: "release-approval", outcome: "denied" } }
   ] };
-  let run = startWorkflow(workflow);
+  const branchWorkflow = { ...workflow, steps: workflow.steps.map((step) => step.id === "release-approval" ? { ...step, onDeny: "continue" } : step) };
+  let run = startWorkflow(branchWorkflow);
   run = completeInstructionStep(run, "inspect");
-  run = decideWorkflowApproval(run, "release-approval", true);
-  assert.equal(getCurrentWorkflowStep(run).id, "post-approval");
-  run = completeInstructionStep(run, "post-approval");
+  run = decideWorkflowApproval(run, "release-approval", false);
+  assert.equal(getCurrentWorkflowStep(run).id, "fallback");
+  run = completeInstructionStep(run, "fallback");
   assert.equal(run.status, "completed");
-  assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "approved", "completed", "skipped"]);
+  assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "denied", "skipped", "completed"]);
 });
 
 test("skips mismatched conditions and completes when all remaining steps are skipped", () => {
