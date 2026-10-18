@@ -50,6 +50,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Discover MCP prompts, collect declared string arguments, and preview returned messages locally.
 - [x] Add connection/disconnection commands, timeouts, pagination limits, and bounded tool output.
 - [x] Attach a reviewed MCP resource or prompt to the next chat message only after explicit confirmation; bound and label the content as untrusted request-scoped context.
+- [x] Handle MCP resource update, resource-list, prompt-list, and tool-list notifications; retain bounded diagnostics and redact resource URI query strings/fragments.
 - [ ] Add OAuth and optional config importers after canonical configuration is stable.
 - [ ] Verify interactively against a trusted local stdio server and remote Streamable HTTP server.
 
