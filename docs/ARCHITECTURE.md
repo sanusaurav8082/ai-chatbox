@@ -8,29 +8,43 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 
 - **Webview UI:** renders the conversation and sends typed messages. It must not hold provider credentials, start processes, access the filesystem, or call model APIs directly.
 - **Extension host:** owns configuration, model/provider clients, agent runtime, MCP connections, permissions, and VS Code APIs.
-- **Model adapters:** normalize provider-specific streaming and tool-call behavior behind a small interface.
-- **Agent runtime:** builds context, asks the model for a response, validates proposed tool calls, requests approval where required, executes permitted tools, and returns tool results to the model.
-- **MCP manager:** owns configured server lifecycle and maps MCP tool schemas/results into the agent's internal tool format.
+- **Model client:** currently sends OpenAI Chat Completions requests and parses server-sent event (SSE) deltas. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
+- **Agent runtime:** planned component that builds context, asks the model for a response, validates proposed tool calls, requests approval where required, executes permitted tools, and returns tool results to the model.
+- **MCP manager:** planned component that owns configured server lifecycle and maps MCP tool schemas/results into the agent's internal tool format.
 - **Extension points:** skills, workflows/SOPs, and knowledge sources will be added behind explicit interfaces.
 
 ## Intended message flow
 
 ```text
-React/Webview UI
-  -- validated postMessage -->
-Extension message router
-  --> AgentRuntime
-      --> Model adapter
-      <-- text deltas / tool proposals
-      --> PermissionService
-      --> Tool registry (built-in or MCP)
-      <-- bounded tool result
-      --> Model adapter (continue loop)
-  <-- typed agent events
 Webview UI
+  -- validated postMessage -->
+Extension host
+  --> Model client
+      --> OpenAI or OpenAI-compatible HTTP endpoint
+      <-- streamed text deltas
+  <-- typed streaming events
+Webview UI
+
+Future agent flow:
+Extension host --> AgentRuntime --> Model adapter
+                           <-- text deltas / tool proposals
+                           --> PermissionService --> Tool registry (built-in or MCP)
+                           <-- bounded tool result
+                           --> Model adapter (continue loop)
 ```
 
-The current Phase 1 scaffold uses a local echo instead of a model. This keeps the UI/extension-host bridge testable before model integration is introduced.
+The webview receives text events only. It never receives the API key and never performs model requests itself. The host keeps a bounded in-memory conversation history for the lifetime of the chat panel; closing the panel clears it.
+
+## Model configuration
+
+- `aiChatbox.provider`: `openai` or `openai-compatible`.
+- `aiChatbox.modelId`: provider-specific model identifier.
+- `aiChatbox.baseUrl`: base URL for compatible endpoints; the OpenAI provider always uses `https://api.openai.com/v1`.
+- `aiChatbox.requestTimeoutMs`: request timeout bounded to 1–300 seconds.
+- OpenAI credentials are managed through extension commands and VS Code `SecretStorage`, never ordinary settings or webview state.
+- The compatible provider omits Authorization unless an API key is added in a future milestone.
+
+The current client uses the streaming Chat Completions format: requests set `stream: true`, and the client emits string content from `choices[0].delta.content`. This intentionally supports a small, understandable contract rather than every provider-specific extension. Local server compatibility varies; configure the endpoint and model ID expected by the selected server.
 
 ## Security principles
 
@@ -39,12 +53,9 @@ The current Phase 1 scaffold uses a local echo instead of a model. This keeps th
 3. Store credentials using VS Code SecretStorage; never put secrets in workspace settings, source control, or webview state.
 4. Distinguish MCP server discovery from connection and tool authorization.
 5. Never execute a tool just because a model requested it. Apply policy and approval checks in our own host-side permission service.
-6. Bound model iterations, tool duration, output size, and concurrent work; support cancellation.
+6. Bound model iterations, tool duration, output size, request duration, and concurrent work; support cancellation.
 7. Treat tool output and retrieved documents as untrusted data, not instructions that override system policy.
-
-## Model support
-
-A model registry will identify provider, model ID, endpoint, and capabilities. We will prefer provider adapters where practical and use OpenAI-compatible endpoints for local servers such as Ollama or LM Studio when their API mode supports it. Credentials remain in SecretStorage.
+8. Model text is rendered with `textContent`; it is not interpreted as HTML.
 
 ## MCP support
 
