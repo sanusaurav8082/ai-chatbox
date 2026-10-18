@@ -1,4 +1,4 @@
-export type WorkflowExpectedOutcome = "completed" | "approved";
+export type WorkflowExpectedOutcome = "completed" | "approved" | "denied";
 export interface WorkflowCondition {
   /** ID of an earlier step whose final outcome controls this step. */
   stepId: string;
@@ -16,6 +16,8 @@ export interface ApprovalWorkflowStep {
   type: "approval";
   title: string;
   prompt: string;
+  /** Defaults to cancel; set to continue to allow an explicit denied-outcome branch. */
+  onDeny?: "cancel" | "continue";
   condition?: WorkflowCondition;
 }
 export type WorkflowStep = InstructionWorkflowStep | ApprovalWorkflowStep;
@@ -71,8 +73,8 @@ export function parseWorkflowManifest(value: unknown): WorkflowManifest {
     if (candidate.condition !== undefined) {
       const raw = candidate.condition;
       if (!isRecord(raw) || typeof raw.stepId !== "string" || !ID_PATTERN.test(raw.stepId) ||
-          (raw.outcome !== "completed" && raw.outcome !== "approved")) {
-        throw new Error("Workflow condition must reference an earlier step and expect completed or approved.");
+          (raw.outcome !== "completed" && raw.outcome !== "approved" && raw.outcome !== "denied")) {
+        throw new Error("Workflow condition must reference an earlier step and expect completed, approved, or denied.");
       }
       if (!seen.has(raw.stepId) || raw.stepId === stepId) throw new Error("Workflow conditions must reference an earlier step.");
       condition = { stepId: raw.stepId, outcome: raw.outcome };
@@ -86,8 +88,9 @@ export function parseWorkflowManifest(value: unknown): WorkflowManifest {
     if (type === "approval") {
       const prompt = candidate.prompt;
       if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_WORKFLOW_STEP_TEXT) throw new Error("Workflow approval prompt is empty or exceeds 8000 characters.");
+      if (candidate.onDeny !== undefined && candidate.onDeny !== "cancel" && candidate.onDeny !== "continue") throw new Error("Approval onDeny must be cancel or continue.");
       totalText += title.length + prompt.length;
-      return { id: stepId, type, title: title.trim(), prompt: prompt.trim(), ...(condition ? { condition } : {}) };
+      return { id: stepId, type, title: title.trim(), prompt: prompt.trim(), ...(candidate.onDeny ? { onDeny: candidate.onDeny } : {}), ...(condition ? { condition } : {}) };
     }
     throw new Error("Workflow step type must be instruction or approval.");
   });
@@ -96,7 +99,7 @@ export function parseWorkflowManifest(value: unknown): WorkflowManifest {
     if (!step.condition) continue;
     const source = normalizedSteps.find((candidate) => candidate.id === step.condition!.stepId)!;
     if ((step.condition.outcome === "completed" && source.type !== "instruction") ||
-        (step.condition.outcome === "approved" && source.type !== "approval")) {
+        ((step.condition.outcome === "approved" || step.condition.outcome === "denied") && source.type !== "approval")) {
       throw new Error("Workflow condition outcome does not match the referenced step type.");
     }
   }
@@ -139,7 +142,7 @@ export function decideWorkflowApproval(run: WorkflowRun, stepId: string, approve
   const step = getCurrentWorkflowStep(run);
   if (run.status !== "awaiting-approval" || !step || step.type !== "approval" || step.id !== stepId) throw new Error("There is no matching workflow approval checkpoint awaiting a decision.");
   const outcome: WorkflowStepOutcome = { stepId, type: "approval", outcome: approved ? "approved" : "denied" };
-  if (!approved) return { ...cloneRun(run), status: "cancelled", outcomes: [...run.outcomes.map(cloneOutcome), outcome] };
+  if (!approved && step.onDeny !== "continue") return { ...cloneRun(run), status: "cancelled", outcomes: [...run.outcomes.map(cloneOutcome), outcome] };
   return moveToNextStep(run, outcome);
 }
 function moveToNextStep(run: WorkflowRun, outcome: WorkflowStepOutcome): WorkflowRun {
