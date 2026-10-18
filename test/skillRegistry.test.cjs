@@ -16,7 +16,7 @@ test("selects enabled skills by keyword overlap with stable tie breaking", () =>
   registry.register({ ...coding, id: "z-debug", keywords: ["typescript", "debugging"] });
   registry.register({ ...coding, id: "a-typescript", keywords: ["typescript"] });
   registry.register({ ...coding, id: "disabled", keywords: ["typescript"], enabled: false });
-  const selected = registry.select("Please help debug this TypeScript compiler error");
+  const selected = registry.select("Please help with debugging this TypeScript compiler error");
   assert.deepEqual(selected.map(item => item.skill.id), ["z-debug", "a-typescript"]);
   assert.equal(selected[0].score, 2);
 });
