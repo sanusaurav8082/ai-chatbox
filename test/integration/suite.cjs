@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const http = require("node:http");
 const vscode = require("vscode");
 const { createAgentModelAdapter } = require("../../dist/agentModelAdapter.js");
+const { streamChatCompletion } = require("../../dist/modelClient.js");
 const {
   AgentRuntime,
   CallbackPermissionService
@@ -119,7 +120,66 @@ async function testAgentProviderToolApproval(decision) {
   });
 }
 
-async function run() {
+
+async function testStreamingModelClient() {
+  const deltas = [];
+  await withMockModelServer(async (_body, response) => {
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.write('data: {"choices":[{"delta":{"content":"hello "}}]}\\n\\n');
+    response.write('data: {"choices":[{"delta":{"content":"stream"}}]}\\n\\n');
+    response.end("data: [DONE]\\n\\n");
+  }, async (baseUrl) => {
+    await streamChatCompletion({
+      config: {
+        provider: "openai-compatible",
+        modelId: "integration-test-model",
+        baseUrl,
+        requestTimeoutMs: 5_000
+      },
+      messages: [{ role: "user", content: "Stream a test response." }],
+      signal: new AbortController().signal,
+      onDelta: (delta) => deltas.push(delta)
+    });
+  });
+  assert.equal(deltas.join(""), "hello stream");
+}
+
+async function testAgentCancellation() {
+  let requestStarted;
+  const started = new Promise((resolve) => { requestStarted = resolve; });
+  await withMockModelServer(async (_body, response) => {
+    requestStarted();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (!response.destroyed) jsonResponse(response, {
+      choices: [{ message: { role: "assistant", content: "This response should be cancelled." } }]
+    });
+  }, async (baseUrl) => {
+    const controller = new AbortController();
+    const runtime = new AgentRuntime({
+      model: createAgentModelAdapter({
+        config: {
+          provider: "openai-compatible",
+          modelId: "integration-test-model",
+          baseUrl,
+          requestTimeoutMs: 5_000
+        }
+      }),
+      tools: [],
+      permissions: new CallbackPermissionService(async () => "deny"),
+      maxIterations: 2
+    });
+    const runPromise = runtime.run({
+      messages: [{ role: "user", content: "Cancel this request." }],
+      signal: controller.signal,
+      onEvent: () => {}
+    });
+    await started;
+    controller.abort();
+    const result = await runPromise;
+    assert.equal(result.reason, "cancelled");
+  });
+}
+\nasync function run() {
   const extensionId = "sanusaurav8082.ai-chatbox";
   const extension = vscode.extensions.getExtension(extensionId);
 
@@ -164,7 +224,7 @@ async function run() {
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
 
-  console.log("AI Chatbox VS Code and agent/provider integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, and agent/provider integration checks passed.");
 }
 
 module.exports = { run };
