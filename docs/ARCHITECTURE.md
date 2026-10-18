@@ -68,7 +68,7 @@ The current implementation supports stdio and Streamable HTTP with static bearer
 ## Future extension points
 
 - **Skills:** versioned JSON manifests with instructions and keywords; discovery is opt-in, instructions are plain text, and scripts/resources are not executed.
-- **Workflows/SOPs:** versioned step definitions with explicit approval checkpoints. The first runtime slice supports instruction and approval steps; conditions, retries, file discovery, and UI integration are future work.
+- **Workflows/SOPs:** versioned JSON manifests loaded only when `aiChatbox.workflowsEnabled` is enabled. The extension host reads bounded files from workspace and user-storage workflow directories and exposes a native VS Code command to step through instructions and approval checkpoints. The current runner displays instructions rather than executing them; every future tool action must still pass the independent per-invocation approval gate.
 - **Knowledge:** local files, SQLite full-text search, and eventually optional embedding/vector retrieval.
 
 ## Workflow runtime contract\n\n`workflowRuntime.ts` validates stable IDs, semantic versions, unique step IDs, supported step types, and bounded workflow/step text. A run snapshots the chosen version so registry updates cannot change an active run. A denied checkpoint cancels the workflow. Workflow approval is not a substitute for tool authorization: every actual tool call must continue to pass through the agent runtime's per-invocation permission service. Workflow definitions are untrusted data and are never evaluated as code. See [the workflow guide](WORKFLOWS.md).\n\n## Agent runtime contract
