@@ -51,3 +51,21 @@ test("upsert replaces same run ID and keeps only bounded newest records", () => 
   assert.equal(saved.filter((item) => item.runId === "run-11").length, 1);
   assert.equal(saved.at(-1).run.status, "awaiting-approval");
 });
+
+test("persists validated skipped outcomes for an explicit denial branch", () => {
+  const branched = { ...workflow, steps: [
+    workflow.steps[0],
+    { ...workflow.steps[1], onDeny: "continue" },
+    { id: "success", type: "instruction", title: "Success", instructions: "Continue after approval.", condition: { stepId: "approve", outcome: "approved" } },
+    { id: "denial", type: "instruction", title: "Denial", instructions: "Record denial.", condition: { stepId: "approve", outcome: "denied" } }
+  ] };
+  let run = startWorkflow(branched);
+  run = completeInstructionStep(run, "inspect");
+  run = decideWorkflowApproval(run, "approve", false);
+  assert.equal(run.status, "running");
+  assert.equal(run.outcomes[2].outcome, "skipped");
+  const records = validateSavedWorkflowRecords([{ runId: "branch-1", run }]);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].run.status, "running");
+  assert.equal(records[0].run.outcomes[2].outcome, "skipped");
+});
