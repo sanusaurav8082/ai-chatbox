@@ -163,8 +163,11 @@ export class McpManager {
         const result = await client.listTools(cursor ? { cursor } : undefined);
         for (const tool of result.tools) {
           const schema = tool.inputSchema;
+          if (typeof tool.name !== "string" || !tool.name || tool.name.length > 200) {
+            throw new Error("MCP server returned a tool name that is empty or longer than 200 characters.");
+          }
           tools.push({
-            name: tool.name.slice(0, 200),
+            name: tool.name,
             description: (tool.description ?? "").slice(0, 4_000),
             inputSchema: isRecord(schema) ? schema : { type: "object", properties: {} }
           });
@@ -225,6 +228,7 @@ export class McpManager {
           description: `MCP server "${server.name}": ${tool.description || tool.name}`.slice(0, 4_000),
           inputSchema: tool.inputSchema,
           validateInput(input: unknown): string | undefined {
+            if (isRecord(input) && input.__invalidJson === true) return "model returned malformed JSON tool arguments";
             if (validate(input)) return undefined;
             const errors = (validate.errors ?? []).slice(0, 5).map((error) =>
               `${error.instancePath || "/"} ${error.message || "is invalid"}`
@@ -282,18 +286,25 @@ async function callWithTimeout(
 function normalizeToolResult(result: unknown): unknown {
   if (!isRecord(result)) return result;
   const content = Array.isArray(result.content)
-    ? result.content.slice(0, 100).map((item) => {
+    ? result.content.slice(0, 20).map((item) => {
       if (!isRecord(item)) return item;
-      if (item.type === "text" && typeof item.text === "string") return { type: "text", text: item.text.slice(0, 20_000) };
+      if (item.type === "text" && typeof item.text === "string") return { type: "text", text: item.text.slice(0, 8_000) };
       if (item.type === "image") return { type: "image", mimeType: item.mimeType, note: "Image content omitted from text context." };
       return item;
     })
     : [];
-  return {
-    isError: result.isError === true,
-    content,
-    structuredContent: result.structuredContent
-  };
+  let structuredContent: unknown;
+  if (result.structuredContent !== undefined) {
+    try {
+      const serialized = JSON.stringify(result.structuredContent);
+      structuredContent = serialized && serialized.length > 20_000
+        ? { note: "Structured MCP result omitted because it exceeded 20000 characters." }
+        : result.structuredContent;
+    } catch {
+      structuredContent = { note: "Structured MCP result could not be serialized." };
+    }
+  }
+  return { isError: result.isError === true, content, structuredContent };
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
