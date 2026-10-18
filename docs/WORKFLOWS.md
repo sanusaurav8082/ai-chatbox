@@ -61,3 +61,19 @@ Instruction steps advance only when the host calls `completeInstructionStep` for
 Workflow files are definitions, not executable code. The current runtime supports instruction and approval steps only; it does not execute shell commands, call tools, evaluate expressions, or implement conditional branches/retries. This makes the state machine independently testable before adding file discovery or UI integration.
 
 **A workflow approval is not a blanket permission to use tools.** Any future tool action must still pass through the agent runtime's existing per-invocation permission service and approval UI. Workflow content is untrusted user-provided guidance and must not override system/developer instructions or security policy. Do not automatically trust workflow files from repositories you do not control.
+
+
+## Loading and running workflows
+
+Workflow loading is opt-in. Set `aiChatbox.workflowsEnabled` to `true`, then run **AI Chatbox: Run Workflow** from the VS Code Command Palette.
+
+The loader reads JSON files from:
+
+- Each workspace's `.ai-chatbox/workflows/*.json` directory.
+- The AI Chatbox extension global-storage `workflows/*.json` directory.
+
+User-storage files are loaded before workspace files; a workspace workflow with the same stable ID takes precedence. The loader considers at most 100 files and 20,000 bytes per file. Invalid, unreadable, oversized, or malformed manifests are skipped and recorded in **AI Chatbox Workflows** output. Disabled workflows are not offered for execution.
+
+The command uses native VS Code dialogs to show each instruction and asks the user to explicitly mark it complete. Approval steps use a modal confirmation and stop the workflow on denial. Dismissing a dialog stops the current run. Runs are currently session-only and are not persisted.
+
+This milestone is a basic host-side execution UI, not an LLM-driven workflow planner. Instruction text is displayed to the user; the runtime does not automatically execute instructions or invoke tools. The approval checkpoint is separate from the existing per-tool approval gate.
