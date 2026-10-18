@@ -419,6 +419,9 @@ async function run() {
   await vscode.commands.executeCommand("aiChatbox.open");
 
   // Exercise the actual HTTP adapter and agent loop against a local deterministic server.
+  await testStreamingModelClient();
+  await testAgentCancellation();
+  await testMcpContextForwarding();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");
