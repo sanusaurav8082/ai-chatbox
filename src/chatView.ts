@@ -111,7 +111,6 @@ export class ChatView {
     ChatView.conversation = ChatView.conversation.slice(-MAX_HISTORY_MESSAGES);
 
     let assistantText = "";
-    let completed = false;
     await panel.webview.postMessage({ type: "assistantStart" } satisfies ModelUiMessage);
 
     try {
@@ -144,7 +143,6 @@ export class ChatView {
         }
       });
 
-      completed = true;
       if (assistantText) {
         ChatView.conversation.push({ role: "assistant", content: assistantText });
         ChatView.conversation = ChatView.conversation.slice(-MAX_HISTORY_MESSAGES);
@@ -168,9 +166,6 @@ export class ChatView {
       await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
       if (ChatView.activeRequest === controller) {
         ChatView.activeRequest = undefined;
-      }
-      if (!completed && controller.signal.aborted) {
-        // The error event is already shown; this branch documents cancellation semantics.
       }
     }
   }
