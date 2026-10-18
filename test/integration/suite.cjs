@@ -1,5 +1,123 @@
 const assert = require("node:assert/strict");
+const http = require("node:http");
 const vscode = require("vscode");
+const { createAgentModelAdapter } = require("../../dist/agentModelAdapter.js");
+const {
+  AgentRuntime,
+  CallbackPermissionService
+} = require("../../dist/agentRuntime.js");
+
+async function withMockModelServer(handler, callback) {
+  const server = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    let body;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      response.writeHead(400).end("invalid json");
+      return;
+    }
+    await handler(body, response);
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  try {
+    await callback(`http://127.0.0.1:${address.port}/v1`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function jsonResponse(response, payload, status = 200) {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(payload));
+}
+
+async function testAgentProviderToolApproval(decision) {
+  let requestCount = 0;
+  let executionCount = 0;
+  const serverRequests = [];
+
+  await withMockModelServer(async (body, response) => {
+    requestCount += 1;
+    serverRequests.push(body);
+    assert.equal(body.model, "integration-test-model");
+    assert.equal(body.stream, false);
+    if (requestCount === 1) {
+      assert.ok(Array.isArray(body.tools) && body.tools.length === 1, "Expected tool schema on first model request.");
+      return jsonResponse(response, {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: "I can inspect the fixture.",
+            tool_calls: [{
+              id: "integration-call-1",
+              type: "function",
+              function: { name: "fixture_echo", arguments: JSON.stringify({ text: "hello from test" }) }
+            }]
+          }
+        }]
+      });
+    }
+
+    assert.ok(body.messages.some((message) =>
+      message.role === "tool" && message.tool_call_id === "integration-call-1"
+    ), "Expected tool result/denial to be sent back to the model.");
+    return jsonResponse(response, {
+      choices: [{ message: { role: "assistant", content: "Mock model completed the turn." } }]
+    });
+  }, async (baseUrl) => {
+    const runtime = new AgentRuntime({
+      model: createAgentModelAdapter({
+        config: {
+          provider: "openai-compatible",
+          modelId: "integration-test-model",
+          baseUrl,
+          requestTimeoutMs: 5_000
+        }
+      }),
+      tools: [{
+        name: "fixture_echo",
+        description: "A deterministic test-only tool.",
+        inputSchema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false
+        },
+        validateInput(input) {
+          return input && typeof input.text === "string" ? undefined : "text must be a string";
+        },
+        async execute(input) {
+          executionCount += 1;
+          return { echoed: input.text };
+        }
+      }],
+      permissions: new CallbackPermissionService(async () => decision),
+      maxIterations: 3
+    });
+
+    const result = await runtime.run({
+      messages: [{ role: "user", content: "Use the fixture echo tool." }],
+      signal: new AbortController().signal,
+      onEvent: () => {}
+    });
+
+    assert.equal(result.reason, "completed");
+    assert.equal(result.finalText, "Mock model completed the turn.");
+    assert.equal(requestCount, 2);
+    assert.equal(executionCount, decision === "allow" ? 1 : 0);
+    assert.ok(serverRequests[0].tools[0].function.parameters);
+    const toolResult = serverRequests[1].messages.find((message) => message.role === "tool");
+    assert.ok(toolResult);
+    if (decision === "deny") assert.match(toolResult.content, /denied/i);
+    else assert.match(toolResult.content, /hello from test/);
+  });
+}
 
 async function run() {
   const extensionId = "sanusaurav8082.ai-chatbox";
@@ -39,10 +157,14 @@ async function run() {
   assert.equal(configuration["aiChatbox.knowledgeEnabled"]?.default, false);
   assert.equal(configuration["aiChatbox.workflowsEnabled"]?.default, false);
 
-  // Exercise the public command entry point. This must not require credentials or a model call.
+  // Exercise the public command entry point without credentials or a model call.
   await vscode.commands.executeCommand("aiChatbox.open");
 
-  console.log("AI Chatbox VS Code integration checks passed.");
+  // Exercise the actual HTTP adapter and agent loop against a local deterministic server.
+  await testAgentProviderToolApproval("allow");
+  await testAgentProviderToolApproval("deny");
+
+  console.log("AI Chatbox VS Code and agent/provider integration checks passed.");
 }
 
 module.exports = { run };
