@@ -25,7 +25,7 @@ jobs:
       - name: Run tests
         run: npm test
       - name: Run VS Code integration tests
-        run: npm run test:integration
+        run: xvfb-run -a npm run test:integration
       - name: Package VSIX
         run: npm run package
       - name: Verify VSIX contents
