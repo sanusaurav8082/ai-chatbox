@@ -500,7 +500,7 @@ function renderWorkflowProgress(message) {
   }
   card._title.textContent = message.workflowName + " · v" + message.version;
   const current = message.stepTitle ? ("Step " + Math.min(message.stepIndex + 1, message.stepCount) + " of " + message.stepCount + ": " + message.stepTitle) : "";
-  card._detail.textContent = [message.status, current, message.detail || ""].filter(Boolean).join("\\n");
+  card._detail.textContent = [message.status, current, message.detail || ""].filter(Boolean).join("\n");
   messages.scrollTop = messages.scrollHeight;
   announce("Workflow " + message.workflowName + ": " + message.status + (current ? ". " + current : ""));
 }
