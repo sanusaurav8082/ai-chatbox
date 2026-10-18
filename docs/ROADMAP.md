@@ -59,8 +59,9 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add opt-in, bounded workspace-scoped conversation persistence (disabled by default).
 - [x] Add a command to clear the saved conversation.
 - [x] Validate persisted conversation structures and guard clear-history against in-flight request races.
-- [ ] Add richer settings/approval presentation.
-- [ ] Improve accessibility and error/approval presentation.
+- [x] Add a settings shortcut and clearer, one-invocation approval controls.
+- [x] Add live status announcements, semantic approval groups, keyboard focus handling, and accessible error alerts.
+- [ ] Manually verify keyboard-only and screen-reader behavior in VS Code.
 
 ## Phase 6 — Extensibility
 
