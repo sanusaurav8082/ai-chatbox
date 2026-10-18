@@ -49,5 +49,5 @@ test("upsert replaces same run ID and keeps only bounded newest records", () => 
   assert.equal(saved[0].runId, "run-2");
   saved = upsertSavedWorkflowRun(saved, "run-11", completeInstructionStep(startWorkflow(workflow), "inspect"));
   assert.equal(saved.filter((item) => item.runId === "run-11").length, 1);
-  assert.equal(saved.at(-1).run.status, "running");
+  assert.equal(saved.at(-1).run.status, "awaiting-approval");
 });
