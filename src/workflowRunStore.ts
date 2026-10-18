@@ -1,8 +1,8 @@
 import { WorkflowRun, parseWorkflowManifest } from "./workflowRuntime";
 export const MAX_SAVED_WORKFLOW_RUNS = 10;
 export const MAX_SAVED_WORKFLOW_STATE_BYTES = 200_000;
-const STATUSES = new Set(["running", "awaiting-approval", "completed", "cancelled"]);
-const OUTCOMES = new Set(["completed", "approved", "denied", "skipped"]);
+const STATUSES = new Set(["running", "awaiting-approval", "awaiting-retry", "completed", "cancelled"]);
+const OUTCOMES = new Set(["completed", "approved", "denied", "skipped", "failed"]);
 
 /** Validate and clone untrusted persisted runs. Invalid records are dropped individually. */
 export function validateSavedWorkflowRuns(value: unknown): WorkflowRun[] {
@@ -45,12 +45,21 @@ function validateRun(value: unknown): WorkflowRun | undefined {
         typeof candidate.outcome !== "string" || !OUTCOMES.has(candidate.outcome)) throw new Error("Invalid workflow outcome.");
     const step = workflow.steps.find((item) => item.id === candidate.stepId);
     if (!step || step.type !== candidate.type) throw new Error("Outcome does not match workflow step.");
-    if ((candidate.type === "instruction" && candidate.outcome !== "completed" && candidate.outcome !== "skipped") ||
+    if ((candidate.type === "instruction" && candidate.outcome !== "completed" && candidate.outcome !== "skipped" && candidate.outcome !== "failed") ||
         (candidate.type === "approval" && candidate.outcome !== "approved" && candidate.outcome !== "denied" && candidate.outcome !== "skipped")) {
       throw new Error("Invalid workflow outcome transition.");
     }
     return { stepId: candidate.stepId, type: candidate.type, outcome: candidate.outcome } as WorkflowRun["outcomes"][number];
   });
+  const attemptsValue = value.attempts === undefined ? {} : value.attempts;
+  if (!isRecord(attemptsValue)) return undefined;
+  const attempts: Record<string, number> = {};
+  for (const [stepId, count] of Object.entries(attemptsValue)) {
+    const step = workflow.steps.find((item) => item.id === stepId);
+    if (!step || step.type !== "instruction" || !Number.isInteger(count) || (count as number) < 2 ||
+        (count as number) > (step.retryPolicy?.maxAttempts ?? 1) || (count as number) > 3) return undefined;
+    attempts[stepId] = count as number;
+  }
   const stepIndex = value.stepIndex as number;
   const status = value.status as WorkflowRun["status"];
   const expectedOutcomeCount = stepIndex + (status === "cancelled" ? 1 : 0);
@@ -66,12 +75,21 @@ function validateRun(value: unknown): WorkflowRun | undefined {
     } else if (outcome.outcome === "skipped") return undefined;
   }
   if (status === "completed" && stepIndex !== workflow.steps.length) return undefined;
-  if ((status === "running" || status === "awaiting-approval") && stepIndex >= workflow.steps.length) return undefined;
+  if ((status === "running" || status === "awaiting-approval" || status === "awaiting-retry") && stepIndex >= workflow.steps.length) return undefined;
   if (status === "running" && workflow.steps[stepIndex]?.type !== "instruction") return undefined;
   if (status === "awaiting-approval" && workflow.steps[stepIndex]?.type !== "approval") return undefined;
-  if (status === "cancelled" && (stepIndex >= workflow.steps.length || workflow.steps[stepIndex]?.type !== "approval" ||
-      outcomes.at(-1)?.stepId !== workflow.steps[stepIndex]?.id || outcomes.at(-1)?.outcome !== "denied")) return undefined;
-  return { workflow: { ...workflow, steps: workflow.steps.map((step) => ({ ...step, ...(step.condition ? { condition: { ...step.condition } } : {}) })) }, stepIndex, status, outcomes: outcomes.map((outcome) => ({ ...outcome })) };
+  if (status === "awaiting-retry" && (workflow.steps[stepIndex]?.type !== "instruction" ||
+      (attempts[workflow.steps[stepIndex].id] ?? 1) >= (workflow.steps[stepIndex].retryPolicy?.maxAttempts ?? 1))) return undefined;
+  if (status === "cancelled") {
+    if (stepIndex >= workflow.steps.length || outcomes.at(-1)?.stepId !== workflow.steps[stepIndex]?.id) return undefined;
+    const terminalStep = workflow.steps[stepIndex];
+    const terminalOutcome = outcomes.at(-1)?.outcome;
+    if (terminalStep.type === "approval") {
+      if (terminalOutcome !== "denied") return undefined;
+    } else if (terminalOutcome !== "failed" ||
+        (attempts[terminalStep.id] ?? 1) < (terminalStep.retryPolicy?.maxAttempts ?? 1)) return undefined;
+  }
+  return { workflow: { ...workflow, steps: workflow.steps.map((step) => ({ ...step, ...(step.condition ? { condition: { ...step.condition } } : {}), ...(step.type === "instruction" && step.retryPolicy ? { retryPolicy: { ...step.retryPolicy } } : {}) })) }, stepIndex, status, outcomes: outcomes.map((outcome) => ({ ...outcome })), attempts };
 }
 function fitWithinStorageLimit(runs: WorkflowRun[]): WorkflowRun[] {
   return fitRecords(runs.map((run, index) => ({ runId: `legacy-${index}`, run }))).map((record) => record.run);
