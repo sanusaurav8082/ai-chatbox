@@ -265,11 +265,36 @@ async function withMockMcpServer(callback) {
   });
   const address = server.address();
   try {
-    await callback(`http://127.0.0.1:${address.port}/mcp`, () => toolCallCount);
+    await callback(`http://127.0.0.1:${address.port}/mcp`, () => toolCallCount, async (uri) => mcpServer.server.sendResourceUpdated({ uri }));
   } finally {
     await mcpServer.close().catch(() => undefined);
     await new Promise((resolve) => server.close(resolve));
   }
+}
+
+async function testMcpNotifications() {
+  const { McpManager } = require("../../dist/mcpManager.js");
+  const received = [];
+  let resolveNotification;
+  const notificationPromise = new Promise((resolve) => { resolveNotification = resolve; });
+  const manager = new McpManager(async () => undefined, (notification) => {
+    received.push(notification);
+    resolveNotification(notification);
+  });
+  await withMockMcpServer(async (mcpUrl, _getCallCount, sendResourceUpdated) => {
+    await manager.connect("fixture", { transport: "streamable-http", url: mcpUrl });
+    await sendResourceUpdated("file:///release-notes.md?token=should-not-appear#private");
+    const notification = await Promise.race([
+      notificationPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for MCP resource notification")), 3_000))
+    ]);
+    assert.equal(notification.serverName, "fixture");
+    assert.equal(notification.kind, "resource-updated");
+    assert.equal(notification.uri, "file:///release-notes.md");
+    assert.ok(!JSON.stringify(notification).includes("should-not-appear"));
+    assert.equal(manager.getRecentNotifications().length, 1);
+  });
+  await manager.disconnectAll();
 }
 
 async function testMcpAgentToolApproval(decision) {
@@ -422,12 +447,13 @@ async function run() {
   await testStreamingModelClient();
   await testAgentCancellation();
   await testMcpContextForwarding();
+  await testMcpNotifications();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");
   await testMcpAgentToolApproval("deny");
 
-  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, and MCP integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, and MCP integration checks passed.");
 }
 
 module.exports = { run };
