@@ -10,6 +10,7 @@ import {
 import { createAgentModelAdapter } from "./agentModelAdapter";
 import { ModelConfig, ModelProvider } from "./modelClient";
 import { McpManager } from "./mcpManager";
+import { MAX_HISTORY_MESSAGES, toTranscriptMessages, validateStoredConversation } from "./conversationStore";
 
 export const OPENAI_API_KEY_SECRET = "aiChatbox.openaiApiKey";
 
@@ -29,63 +30,14 @@ type ModelUiMessage =
   | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown };
 
 const MAX_PROMPT_LENGTH = 20_000;
-const MAX_HISTORY_MESSAGES = 40;
 const MAX_TOOL_APPROVALS_PENDING = 8;
 const CONVERSATION_STORAGE_KEY = "aiChatbox.conversation.v1";
-const MAX_STORED_CONVERSATION_BYTES = 250_000;
-
-function validStoredConversation(value: unknown): AgentMessage[] {
-  if (!Array.isArray(value) || value.length > MAX_HISTORY_MESSAGES) return [];
-  try {
-    if (JSON.stringify(value).length > MAX_STORED_CONVERSATION_BYTES) return [];
-  } catch {
-    return [];
-  }
-  const result: AgentMessage[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-    const message = item as Record<string, unknown>;
-    if (typeof message.content !== "string" || message.content.length > 50_000) return [];
-    if (message.role === "system" || message.role === "user" || message.role === "assistant") {
-      if (message.role === "assistant" && message.toolCalls !== undefined) {
-        if (!Array.isArray(message.toolCalls) || message.toolCalls.length > 8) return [];
-        const toolCalls = message.toolCalls;
-        if (!toolCalls.every((call) => !!call && typeof call === "object" &&
-          typeof (call as Record<string, unknown>).id === "string" &&
-          typeof (call as Record<string, unknown>).name === "string" &&
-          "arguments" in (call as Record<string, unknown>))) return [];
-        result.push({ role: "assistant", content: message.content, toolCalls: toolCalls as { id: string; name: string; arguments: unknown }[] });
-      } else {
-        result.push({ role: message.role, content: message.content });
-      }
-    } else if (message.role === "tool" &&
-      typeof message.toolCallId === "string" && message.toolCallId.length <= 200 &&
-      typeof message.name === "string" && message.name.length <= 200) {
-      result.push({
-        role: "tool",
-        toolCallId: message.toolCallId,
-        name: message.name,
-        content: message.content
-      });
-    } else {
-      return [];
-    }
-  }
-  return result;
-}
-
-function transcriptMessages(messages: AgentMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
-  return messages.flatMap((message) =>
-    (message.role === "user" || message.role === "assistant") && message.content.trim()
-      ? [{ role: message.role, content: message.content }]
-      : []
-  );
-}
 
 export class ChatView {
   private static currentPanel: vscode.WebviewPanel | undefined;
   private static activeRequest: AbortController | undefined;
   private static conversation: AgentMessage[] = [];
+  private static conversationEpoch = 0;
   private static pendingApprovals = new Map<string, {
     resolve: (decision: ToolApprovalDecision) => void;
     abort: () => void;
@@ -106,7 +58,7 @@ export class ChatView {
     const persistConversation = vscode.workspace.getConfiguration("aiChatbox")
       .get<boolean>("persistConversation", false);
     ChatView.conversation = persistConversation
-      ? validStoredConversation(context.workspaceState.get<unknown>(CONVERSATION_STORAGE_KEY))
+      ? validateStoredConversation(context.workspaceState.get<unknown>(CONVERSATION_STORAGE_KEY))
       : [];
     if (!persistConversation) void context.workspaceState.update(CONVERSATION_STORAGE_KEY, undefined);
     panel.webview.html = ChatView.getHtml(panel.webview);
@@ -117,7 +69,7 @@ export class ChatView {
       if (message.type === "ready") {
         const showWelcome = vscode.workspace.getConfiguration("aiChatbox")
           .get<boolean>("showWelcomeMessage", true);
-        const restoredMessages = transcriptMessages(ChatView.conversation);
+        const restoredMessages = toTranscriptMessages(ChatView.conversation);
         if (restoredMessages.length) {
           await panel.webview.postMessage({ type: "conversationRestore", messages: restoredMessages } satisfies ModelUiMessage);
         } else if (showWelcome) {
@@ -179,6 +131,7 @@ export class ChatView {
     mcpManager: McpManager
   ): Promise<void> {
     const controller = new AbortController();
+    const conversationEpoch = ChatView.conversationEpoch;
     ChatView.activeRequest = controller;
     ChatView.conversation.push({ role: "user", content: text });
     ChatView.conversation = ChatView.conversation.slice(-MAX_HISTORY_MESSAGES);
@@ -266,6 +219,7 @@ export class ChatView {
           }
         }
       });
+      if (conversationEpoch !== ChatView.conversationEpoch) return;
       ChatView.conversation = result.messages.slice(-MAX_HISTORY_MESSAGES);
       await ChatView.saveConversation(context);
       if (!result.finalText && result.reason !== "cancelled") {
@@ -275,6 +229,7 @@ export class ChatView {
         } satisfies ModelUiMessage);
       }
     } catch (error) {
+      if (conversationEpoch !== ChatView.conversationEpoch) return;
       const message = error instanceof Error ? error.message : "Unknown agent request failure.";
       ChatView.conversation = ChatView.conversation.filter(
         (item, index, messages) => !(index === messages.length - 1 && item.role === "user" && item.content === text)
@@ -296,6 +251,15 @@ export class ChatView {
   }
 
   static async clearConversation(context: vscode.ExtensionContext): Promise<void> {
+    // Invalidate in-flight work before clearing storage. A cancelled request may
+    // still settle asynchronously; its epoch check prevents it from restoring old history.
+    ChatView.conversationEpoch += 1;
+    ChatView.activeRequest?.abort();
+    for (const [id, pending] of ChatView.pendingApprovals) {
+      pending.abort();
+      pending.resolve("deny");
+      ChatView.pendingApprovals.delete(id);
+    }
     ChatView.conversation = [];
     await context.workspaceState.update(CONVERSATION_STORAGE_KEY, undefined);
     if (ChatView.currentPanel) {
