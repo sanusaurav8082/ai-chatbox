@@ -24,3 +24,24 @@ jobs:
         run: npm run build
       - name: Run tests
         run: npm test
+      - name: Package VSIX
+        run: npm run package
+      - name: Verify VSIX contents
+        run: |
+          test -s ai-chatbox-0.5.0.vsix
+          unzip -Z1 ai-chatbox-0.5.0.vsix | grep -Fxq "extension/package.json"
+          unzip -Z1 ai-chatbox-0.5.0.vsix | grep -Fxq "extension/dist/extension.js"
+          unzip -Z1 ai-chatbox-0.5.0.vsix | grep -Fxq "extension/readme.md"
+          unzip -Z1 ai-chatbox-0.5.0.vsix | grep -Fxq "extension/LICENSE.txt"
+          if unzip -Z1 ai-chatbox-0.5.0.vsix | grep -Eq "^extension/(src|test|docs|node_modules)/"; then
+            echo "VSIX contains development-only files" >&2
+            unzip -Z1 ai-chatbox-0.5.0.vsix | grep -E "^extension/(src|test|docs|node_modules)/" >&2
+            exit 1
+          fi
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-chatbox-vsix
+          path: ai-chatbox-0.5.0.vsix
+          if-no-files-found: error
+          retention-days: 14

@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 6 — MCP diagnostics.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 7 — VSIX packaging.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -94,7 +94,13 @@ To package an installable VSIX:
 npm run package
 ```
 
-The generated `.vsix` is a local build artifact and is intentionally excluded from Git.
+This runs type-checking and the production build, then creates `ai-chatbox-0.5.0.vsix`. The package excludes development sources and test-only bundles; runtime dependencies are bundled into `dist/extension.js`. Install it from the command line with:
+
+```bash
+code --install-extension ./ai-chatbox-0.5.0.vsix
+```
+
+Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git.
 
 ## Project layout
 

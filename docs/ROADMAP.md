@@ -52,7 +52,10 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add MCP server status inspection for configured, connected, disconnected, and invalid configurations.
 - [x] Show discovered tool counts and recent connection errors.
 - [x] Add an Output channel for MCP connection diagnostics while omitting URL query strings and fragments from endpoint summaries.
-- [ ] Package and install a VSIX.
+- [x] Add a repeatable VSIX package command with development files excluded.
+- [x] Verify VSIX contents in CI and upload the package as a short-lived build artifact.
+- [x] Document VSIX installation and a manual smoke-test checklist.
+- [ ] Manually install and exercise the packaged extension in VS Code.
 - [ ] Add conversation persistence and richer settings/approval presentation.
 - [ ] Improve accessibility and error/approval presentation.
 
