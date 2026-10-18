@@ -195,3 +195,29 @@ test("rejects duplicate tool registrations", () => {
     /Duplicate tool registration/
   );
 });
+
+test("caps tool execution to eight calls per model turn", async () => {
+  const calls = Array.from({ length: 10 }, (_, index) => ({
+    id: `call-${index}`,
+    name: "echo",
+    arguments: { text: String(index) }
+  }));
+  const model = fakeModel([
+    { type: "toolCalls", toolCalls: calls },
+    { type: "final", content: "Finished." }
+  ]);
+  let executions = 0;
+  const runtime = new AgentRuntime({
+    model,
+    tools: [makeTool({ async execute() { executions += 1; return "ok"; } })],
+    permissions: new CallbackPermissionService(async () => "allow")
+  });
+
+  await run(runtime);
+  assert.equal(executions, 8);
+  assert.equal(
+    model.requests[1].messages.filter((message) => message.role === "tool").length,
+    10
+  );
+  assert.ok(model.requests[1].messages.some((message) => /per-turn tool-call limit/.test(message.content)));
+});
