@@ -18,7 +18,8 @@ type WebviewMessage =
   | { type: "ready" }
   | { type: "send"; text: string }
   | { type: "cancel" }
-  | { type: "toolDecision"; toolCallId: string; decision: "allow" | "deny" };
+  | { type: "toolDecision"; toolCallId: string; decision: "allow" | "deny" }
+  | { type: "openSettings" };
 
 type ModelUiMessage =
   | { type: "conversationRestore"; messages: Array<{ role: "user" | "assistant"; content: string }> }
@@ -78,6 +79,10 @@ export class ChatView {
             text: "Welcome to AI Chatbox. Tool calls require your approval before they run. Configure aiChatbox.mcpServers and use “AI Chatbox: Connect MCP Server” to connect a reviewed MCP server. Choose a local OpenAI-compatible model in settings, or set an OpenAI key with “AI Chatbox: Set OpenAI API Key”."
           });
         }
+        return;
+      }
+      if (message.type === "openSettings") {
+        await vscode.commands.executeCommand("workbench.action.openSettings", "aiChatbox");
         return;
       }
       if (message.type === "cancel") {
@@ -313,9 +318,16 @@ export class ChatView {
 body { padding:0; margin:0; color:var(--vscode-foreground); background:var(--vscode-editor-background); font-family:var(--vscode-font-family); }
 .app { display:flex; flex-direction:column; height:100vh; max-width:900px; margin:0 auto; }
 header { padding:16px 20px; border-bottom:1px solid var(--vscode-panel-border); }
+.header-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 h1 { margin:0; font-size:18px; font-weight:600; }
 .sub { margin-top:5px; color:var(--vscode-descriptionForeground); font-size:12px; }
 #messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+#announcer, .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.tool-card:focus-within { outline:2px solid var(--vscode-focusBorder); outline-offset:2px; }
+.tool-status { margin-top:8px; color:var(--vscode-descriptionForeground); }
+.approval-warning { margin-top:8px; font-weight:600; color:var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+button.secondary { color:var(--vscode-button-secondaryForeground); background:var(--vscode-button-secondaryBackground); }
+button.secondary:hover { background:var(--vscode-button-secondaryHoverBackground); }
 .message { white-space:pre-wrap; overflow-wrap:anywhere; padding:12px 14px; border-radius:8px; line-height:1.5; }
 .user { background:var(--vscode-input-background); border:1px solid var(--vscode-input-border); align-self:flex-end; max-width:85%; }
 .assistant { background:var(--vscode-sideBar-background); border:1px solid var(--vscode-panel-border); align-self:stretch; }
@@ -330,18 +342,26 @@ button { padding:8px 14px; border:0; border-radius:6px; color:var(--vscode-butto
 button:hover { background:var(--vscode-button-hoverBackground); }
 button:disabled { opacity:.6; cursor:default; }
 button:focus-visible, textarea:focus-visible { outline:1px solid var(--vscode-focusBorder); outline-offset:2px; }
-#cancel { display:none; }
+#cancel[hidden] { display:none; }
 .hint { padding:0 20px 10px; color:var(--vscode-descriptionForeground); font-size:11px; }
+#announcer { color:var(--vscode-descriptionForeground); }
 </style>
 </head>
 <body>
 <main class="app">
-<header><h1>AI Chatbox</h1><div class="sub">Agent chat · Tool execution requires explicit approval</div></header>
-<section id="messages" aria-live="polite" aria-label="Conversation"></section>
-<div class="hint">Configure model settings and aiChatbox.mcpServers. Connect MCP servers through the Command Palette; each tool call still requires approval.</div>
-<form id="composer">
-<textarea id="prompt" aria-label="Message" placeholder="Ask something..." maxlength="20000" required></textarea>
-<button id="send" type="submit">Send</button><button id="cancel" type="button">Stop</button>
+<header>
+  <div class="header-row">
+    <h1>AI Chatbox</h1>
+    <button id="settings" class="secondary" type="button" aria-label="Open AI Chatbox settings">Settings</button>
+  </div>
+  <div class="sub">Agent chat · Tool execution requires explicit approval</div>
+</header>
+<section id="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Conversation"></section>
+<div id="announcer" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="hint" id="composer-hint">Configure model settings and aiChatbox.mcpServers. Connect MCP servers through the Command Palette; each tool call still requires approval.</div>
+<form id="composer" aria-label="Send a message">
+<textarea id="prompt" aria-label="Message" aria-describedby="composer-hint" placeholder="Ask something..." maxlength="20000" required></textarea>
+<button id="send" type="submit">Send</button><button id="cancel" type="button" hidden>Stop</button>
 </form>
 </main>
 <script nonce="${nonce}">
@@ -351,6 +371,8 @@ const promptInput = document.getElementById("prompt");
 const form = document.getElementById("composer");
 const sendButton = document.getElementById("send");
 const cancelButton = document.getElementById("cancel");
+const settingsButton = document.getElementById("settings");
+const announcer = document.getElementById("announcer");
 let activeAssistant = null;
 const toolCards = new Map();
 
@@ -362,10 +384,16 @@ function addMessage(role, text) {
   messages.scrollTop = messages.scrollHeight;
   return item;
 }
+function announce(text) {
+  announcer.textContent = "";
+  requestAnimationFrame(() => { announcer.textContent = text; });
+}
 function setBusy(busy) {
   sendButton.disabled = busy;
   promptInput.disabled = busy;
-  cancelButton.style.display = busy ? "block" : "none";
+  cancelButton.hidden = !busy;
+  cancelButton.disabled = false;
+  announce(busy ? "Assistant is responding. You can stop the response." : "Response finished. Message input is ready.");
   if (!busy) promptInput.focus();
 }
 function renderToolEvent(message) {
@@ -373,6 +401,7 @@ function renderToolEvent(message) {
   if (!card) {
     card = document.createElement("div");
     card.className = "tool-card";
+    card.setAttribute("role", "group");
     const title = document.createElement("div");
     title.className = "tool-title";
     title.textContent = "Tool: " + message.name;
@@ -382,6 +411,9 @@ function renderToolEvent(message) {
     detail.textContent = message.input === undefined ? "" : JSON.stringify(message.input, null, 2);
     card.appendChild(detail);
     const status = document.createElement("div");
+    status.className = "tool-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
     status.textContent = "Proposed by the model";
     card.appendChild(status);
     card._status = status;
@@ -401,28 +433,37 @@ function renderToolEvent(message) {
 function renderApproval(message) {
   const card = document.createElement("div");
   card.className = "tool-card";
+  card.setAttribute("role", "group");
+  card.setAttribute("aria-label", "Tool approval request");
   const title = document.createElement("div");
   title.className = "tool-title";
   title.textContent = "Approval required: " + message.name;
+  title.id = "approval-title-" + String(message.toolCallId).replace(/[^a-zA-Z0-9_-]/g, "");
+  card.setAttribute("aria-labelledby", title.id);
   card.appendChild(title);
   const detail = document.createElement("div");
   detail.className = "tool-input";
   detail.textContent = JSON.stringify(message.input, null, 2);
   card.appendChild(detail);
   const warning = document.createElement("div");
-  warning.textContent = "Review the requested action and arguments before allowing it.";
+  warning.className = "approval-warning";
+  warning.textContent = "Review the requested action and arguments before allowing it. Approval allows this invocation only.";
   card.appendChild(warning);
   const actions = document.createElement("div");
   actions.className = "tool-actions";
   const approve = document.createElement("button");
   approve.type = "button";
   approve.textContent = "Approve once";
+  approve.setAttribute("aria-label", "Approve this tool invocation once");
   const deny = document.createElement("button");
   deny.type = "button";
+  deny.className = "secondary";
   deny.textContent = "Deny";
+  deny.setAttribute("aria-label", "Deny this tool invocation");
   const decide = (decision) => {
     approve.disabled = true;
     deny.disabled = true;
+    announce(decision === "allow" ? "Tool invocation approved once." : "Tool invocation denied.");
     vscode.postMessage({ type: "toolDecision", toolCallId: message.toolCallId, decision });
   };
   approve.addEventListener("click", () => decide("allow"));
@@ -431,7 +472,10 @@ function renderApproval(message) {
   card.appendChild(actions);
   messages.appendChild(card);
   messages.scrollTop = messages.scrollHeight;
+  announce("Approval required for tool " + message.name + ". Review its arguments, then approve once or deny.");
+  deny.focus();
 }
+settingsButton.addEventListener("click", () => vscode.postMessage({ type: "openSettings" }));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = promptInput.value.trim();
@@ -445,6 +489,7 @@ form.addEventListener("submit", (event) => {
 });
 cancelButton.addEventListener("click", () => {
   cancelButton.disabled = true;
+  announce("Stopping the current response.");
   vscode.postMessage({ type: "cancel" });
 });
 promptInput.addEventListener("keydown", (event) => {
@@ -468,7 +513,9 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "assistantError" && typeof message.text === "string") {
     const errorItem = activeAssistant ?? addMessage("assistant", "");
     errorItem.classList.add("error");
+    errorItem.setAttribute("role", "alert");
     errorItem.textContent += (errorItem.textContent ? "\n\n" : "") + "Error: " + message.text;
+    announce("Request failed: " + message.text);
   } else if (message.type === "toolEvent") renderToolEvent(message);
   else if (message.type === "toolApprovalRequest") renderApproval(message);
   else if (message.type === "assistantDone") {
