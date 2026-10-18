@@ -117,7 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     const connected = new Set(mcpManager!.getConnectedNames());
-    const toolCounts = new Map(mcpManager!.getToolSummaries().map((summary) => [summary.serverName, summary.tools.length]));
+    const toolCounts = new Map(mcpManager!.getToolSummaries().map((summary): [string, number] => [summary.serverName, summary.tools.length]));
     mcpOutput.appendLine(`[${new Date().toISOString()}] MCP status requested; ${connected.size} server(s) connected.`);
     const items = names.map((name) => {
       try {
