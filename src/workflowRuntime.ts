@@ -48,7 +48,7 @@ export const MAX_WORKFLOW_STEP_TEXT = 8_000;
 export const MAX_WORKFLOW_TOTAL_TEXT = 32_000;
 
 const ID_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
-const VERSION_PATTERN = /^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$/;
+const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 /** Validate untrusted JSON data before registering it as a workflow definition. */
 export function parseWorkflowManifest(value: unknown): WorkflowManifest {
