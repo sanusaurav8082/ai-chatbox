@@ -9,6 +9,8 @@ export interface AgentToolCall {
 export interface AgentToolDefinition {
   name: string;
   description: string;
+  /** JSON Schema exposed to model providers when available. */
+  inputSchema?: Record<string, unknown>;
   /** Return a validation message for invalid input, or undefined when valid. */
   validateInput: (input: unknown) => string | undefined;
   execute: (input: unknown, signal: AbortSignal) => Promise<unknown>;
@@ -17,6 +19,7 @@ export interface AgentToolDefinition {
 export interface AgentToolSpec {
   name: string;
   description: string;
+  inputSchema?: Record<string, unknown>;
 }
 
 export type AgentMessage =
@@ -130,7 +133,7 @@ export class AgentRuntime {
 
         const turn = await this.options.model.complete({
           messages: messages.slice(),
-          tools: [...this.tools.values()].map(({ name, description }) => ({ name, description })),
+          tools: [...this.tools.values()].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
           signal: request.signal
         });
         this.throwIfCancelled(request.signal);
