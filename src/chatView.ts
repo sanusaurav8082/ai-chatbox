@@ -29,7 +29,8 @@ type ModelUiMessage =
   | { type: "assistantDone" }
   | { type: "assistantError"; text: string }
   | { type: "toolEvent"; event: string; toolCallId: string; name: string; input?: unknown; output?: string }
-  | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown };
+  | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown }
+  | { type: "workflowProgress"; runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number; status: string; stepTitle?: string; detail?: string };
 
 const MAX_PROMPT_LENGTH = 20_000;
 const MAX_TOOL_APPROVALS_PENDING = 8;
@@ -44,6 +45,14 @@ export class ChatView {
     resolve: (decision: ToolApprovalDecision) => void;
     abort: () => void;
   }>();
+
+  static showWorkflowProgress(message: {
+    runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number;
+    status: string; stepTitle?: string; detail?: string;
+  }): void {
+    if (!ChatView.currentPanel || !/^[a-zA-Z0-9-]{1,100}$/.test(message.runId)) return;
+    void ChatView.currentPanel.webview.postMessage({ type: "workflowProgress", ...message } satisfies ModelUiMessage);
+  }
 
   static open(context: vscode.ExtensionContext, mcpManager: McpManager): void {
     if (ChatView.currentPanel) {
@@ -393,6 +402,9 @@ h1 { margin:0; font-size:18px; font-weight:600; }
 #messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
 #announcer, .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .tool-card:focus-within { outline:2px solid var(--vscode-focusBorder); outline-offset:2px; }
+.workflow-card { border:1px solid var(--vscode-panel-border); border-left:3px solid var(--vscode-textLink-foreground); border-radius:8px; padding:12px; background:var(--vscode-sideBar-background); }
+.workflow-title { font-weight:600; }
+.workflow-detail { margin-top:6px; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--vscode-descriptionForeground); }
 .tool-status { margin-top:8px; color:var(--vscode-descriptionForeground); }
 .approval-warning { margin-top:8px; font-weight:600; color:var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
 button.secondary { color:var(--vscode-button-secondaryForeground); background:var(--vscode-button-secondaryBackground); }
@@ -444,6 +456,7 @@ const settingsButton = document.getElementById("settings");
 const announcer = document.getElementById("announcer");
 let activeAssistant = null;
 const toolCards = new Map();
+const workflowCards = new Map();
 
 function addMessage(role, text) {
   const item = document.createElement("div");
@@ -464,6 +477,32 @@ function setBusy(busy) {
   cancelButton.disabled = false;
   announce(busy ? "Assistant is responding. You can stop the response." : "Response finished. Message input is ready.");
   if (!busy) promptInput.focus();
+}
+function renderWorkflowProgress(message) {
+  let card = workflowCards.get(message.runId);
+  if (!card) {
+    card = document.createElement("section");
+    card.className = "workflow-card";
+    card.setAttribute("role", "group");
+    card.setAttribute("aria-label", "Workflow progress");
+    const title = document.createElement("div");
+    title.className = "workflow-title";
+    card.appendChild(title);
+    const detail = document.createElement("div");
+    detail.className = "workflow-detail";
+    detail.setAttribute("role", "status");
+    detail.setAttribute("aria-live", "polite");
+    card.appendChild(detail);
+    card._title = title;
+    card._detail = detail;
+    messages.appendChild(card);
+    workflowCards.set(message.runId, card);
+  }
+  card._title.textContent = message.workflowName + " · v" + message.version;
+  const current = message.stepTitle ? ("Step " + Math.min(message.stepIndex + 1, message.stepCount) + " of " + message.stepCount + ": " + message.stepTitle) : "";
+  card._detail.textContent = [message.status, current, message.detail || ""].filter(Boolean).join("\n");
+  messages.scrollTop = messages.scrollHeight;
+  announce("Workflow " + message.workflowName + ": " + message.status + (current ? ". " + current : ""));
 }
 function renderToolEvent(message) {
   let card = toolCards.get(message.toolCallId);
@@ -595,6 +634,7 @@ window.addEventListener("message", (event) => {
     errorItem.setAttribute("role", "alert");
     errorItem.textContent += (errorItem.textContent ? "\n\n" : "") + "Error: " + message.text;
     announce("Request failed: " + message.text);
+  } else if (message.type === "workflowProgress" && typeof message.runId === "string" && typeof message.workflowName === "string") renderWorkflowProgress(message);
   } else if (message.type === "toolEvent") renderToolEvent(message);
   else if (message.type === "toolApprovalRequest") renderApproval(message);
   else if (message.type === "assistantDone") {

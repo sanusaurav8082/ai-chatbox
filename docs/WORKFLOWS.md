@@ -74,6 +74,11 @@ The loader reads JSON files from:
 
 User-storage files are loaded before workspace files; a workspace workflow with the same stable ID takes precedence. The loader considers at most 100 files and 20,000 bytes per file. Invalid, unreadable, oversized, or malformed manifests are skipped and recorded in **AI Chatbox Workflows** output. Disabled workflows are not offered for execution.
 
-The command uses native VS Code dialogs to show each instruction and asks the user to explicitly mark it complete. Approval steps use a modal confirmation and stop the workflow on denial. Dismissing a dialog stops the current run. Runs are currently session-only and are not persisted.
+The command uses native VS Code dialogs to show each instruction and asks the user to explicitly mark it complete. Approval steps use a modal confirmation and stop the workflow on denial. Dismissing a dialog stops the current run. Workflow run snapshots are persisted in extension global state (up to 10 runs and 200 KB total), including the exact workflow version, current step index, status, and bounded outcomes. Reopen the chat to see live progress while a run is active; the **AI Chatbox: Resume Workflow** command lists interrupted runs and resumes from their saved snapshot, even if the workflow file has changed. Invalid persisted records are skipped. Explicitly cancelling an instruction removes that run; denying an approval marks it cancelled; dismissing a dialog leaves it resumable. The chat webview only displays host-generated progress and never decides workflow transitions.
 
 This milestone is a basic host-side execution UI, not an LLM-driven workflow planner. Instruction text is displayed to the user; the runtime does not automatically execute instructions or invoke tools. The approval checkpoint is separate from the existing per-tool approval gate.
+
+
+## Saved run behavior
+
+Run persistence is separate from conversation persistence. It stores workflow definitions and progress in VS Code extension global state so a run can be resumed after restarting VS Code. The store validates each snapshot on read, checks status/step/outcome consistency, clones nested data, and enforces a 10-run / 200 KB bound. Only runs in `running` or `awaiting-approval` state appear in the resume picker. A resumed run uses its immutable saved definition, not a newly loaded file with the same ID. Workflow approval remains independent of per-tool approval.

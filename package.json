@@ -36,6 +36,7 @@
     "onCommand:aiChatbox.showMcpDiagnostics",
     "onCommand:aiChatbox.clearConversation",
     "onCommand:aiChatbox.runWorkflow",
+    "onCommand:aiChatbox.resumeWorkflow",
     "onCommand:aiChatbox.showWorkflowDiagnostics"
   ],
   "contributes": {
@@ -83,6 +84,10 @@
       {
         "command": "aiChatbox.runWorkflow",
         "title": "AI Chatbox: Run Workflow"
+      },
+      {
+        "command": "aiChatbox.resumeWorkflow",
+        "title": "AI Chatbox: Resume Workflow"
       },
       {
         "command": "aiChatbox.showWorkflowDiagnostics",

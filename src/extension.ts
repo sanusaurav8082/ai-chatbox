@@ -2,7 +2,8 @@ import * as vscode from "vscode";
 import { ChatView, OPENAI_API_KEY_SECRET } from "./chatView";
 import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
 import { loadWorkflowFiles, getRunnableWorkflows, MAX_WORKFLOW_FILE_BYTES, WorkflowFile } from "./workflowLoader";
-import { completeInstructionStep, decideWorkflowApproval, getCurrentWorkflowStep, startWorkflow } from "./workflowRuntime";
+import { WorkflowRun, completeInstructionStep, decideWorkflowApproval, getCurrentWorkflowStep, startWorkflow } from "./workflowRuntime";
+import { upsertSavedWorkflowRun, validateSavedWorkflowRecords } from "./workflowRunStore";
 
 export const MCP_TOKEN_SECRET_PREFIX = "aiChatbox.mcpToken.";
 let mcpManager: McpManager | undefined;
@@ -84,49 +85,53 @@ async function collectWorkflowFiles(context: vscode.ExtensionContext, output: vs
   return contents;
 }
 
-async function runSelectedWorkflow(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
-  const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("workflowsEnabled", false);
-  if (!enabled) {
-    void vscode.window.showWarningMessage(
-      "Workflow loading is disabled. Set aiChatbox.workflowsEnabled to true to opt in, then run this command again."
-    );
-    return;
-  }
+const WORKFLOW_RUNS_KEY = "aiChatbox.workflowRuns.v1";
 
-  const files = await collectWorkflowFiles(context, output);
-  const loaded = loadWorkflowFiles(files);
-  for (const rejected of loaded.rejected) {
-    output.appendLine(`Skipped workflow file "${rejected.path}": ${rejected.reason}`);
-  }
-  const workflows = getRunnableWorkflows(loaded.registry.list());
-  if (!workflows.length) {
-    const detail = loaded.rejected.length ? ` ${loaded.rejected.length} file(s) were skipped; see AI Chatbox Workflows output for details.` : "";
-    void vscode.window.showInformationMessage(
-      `No enabled workflows found. Add JSON files to .ai-chatbox/workflows/ or the AI Chatbox user storage workflows/ directory.${detail}`
-    );
-    return;
-  }
-  if (loaded.rejected.length) {
-    output.appendLine(`Loaded ${loaded.loaded} workflow file(s); ${loaded.rejected.length} file(s) rejected.`);
-  }
+async function saveWorkflowRun(context: vscode.ExtensionContext, runId: string, run: WorkflowRun): Promise<void> {
+  const current = context.globalState.get<unknown>(WORKFLOW_RUNS_KEY);
+  await context.globalState.update(WORKFLOW_RUNS_KEY, upsertSavedWorkflowRun(current, runId, run));
+}
 
-  const selected = await vscode.window.showQuickPick(workflows.map((workflow) => ({
-    label: workflow.name,
-    description: `${workflow.id} · v${workflow.version}`,
-    detail: workflow.description,
-    workflow
-  })), { title: "Run AI Chatbox Workflow", placeHolder: "Choose a reviewed workflow definition" });
-  if (!selected) return;
+async function removeWorkflowRun(context: vscode.ExtensionContext, runId: string): Promise<void> {
+  const current = validateSavedWorkflowRecords(context.globalState.get<unknown>(WORKFLOW_RUNS_KEY));
+  await context.globalState.update(WORKFLOW_RUNS_KEY, current.filter((record) => record.runId !== runId));
+}
 
-  let run = startWorkflow(selected.workflow);
-  output.appendLine(`Started workflow "${run.workflow.id}" version ${run.workflow.version}.`);
+function publishWorkflowProgress(runId: string, run: WorkflowRun, status: string, detail?: string): void {
+  const step = getCurrentWorkflowStep(run);
+  ChatView.showWorkflowProgress({
+    runId,
+    workflowName: run.workflow.name,
+    version: run.workflow.version,
+    stepIndex: run.stepIndex,
+    stepCount: run.workflow.steps.length,
+    status,
+    stepTitle: step?.title,
+    detail
+  });
+}
+
+async function executeWorkflowRun(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  runId: string,
+  initialRun: WorkflowRun
+): Promise<void> {
+  let run = initialRun;
+  await saveWorkflowRun(context, runId, run);
+  output.appendLine(`Workflow "${run.workflow.id}" v${run.workflow.version} run "${runId}" is ${run.status}.`);
+
   while (run.status === "running" || run.status === "awaiting-approval") {
     const step = getCurrentWorkflowStep(run);
     if (!step) {
+      publishWorkflowProgress(runId, run, "Error", "The workflow reached an invalid step state.");
       void vscode.window.showErrorMessage("Workflow runtime reached an invalid step state.");
       return;
     }
+    const status = run.status === "awaiting-approval" ? "Awaiting approval" : "In progress";
+    publishWorkflowProgress(runId, run, status);
     const stepLabel = `Step ${run.stepIndex + 1} of ${run.workflow.steps.length}: ${step.title}`;
+
     if (step.type === "instruction") {
       const decision = await vscode.window.showInformationMessage(
         `${run.workflow.name}\n${stepLabel}`,
@@ -134,8 +139,15 @@ async function runSelectedWorkflow(context: vscode.ExtensionContext, output: vsc
         "Mark Complete",
         "Cancel Workflow"
       );
-      if (decision !== "Mark Complete") {
-        output.appendLine(`Workflow "${run.workflow.id}" stopped by user during step "${step.id}".`);
+      if (decision === undefined) {
+        publishWorkflowProgress(runId, run, "Paused", "Dialog dismissed. Resume this saved run with AI Chatbox: Resume Workflow.");
+        output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" paused when its instruction dialog was dismissed.`);
+        return;
+      }
+      if (decision === "Cancel Workflow") {
+        await removeWorkflowRun(context, runId);
+        publishWorkflowProgress(runId, run, "Cancelled", "Cancelled by the user.");
+        output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" cancelled by the user.`);
         return;
       }
       run = completeInstructionStep(run, step.id);
@@ -147,19 +159,81 @@ async function runSelectedWorkflow(context: vscode.ExtensionContext, output: vsc
         "Deny Workflow"
       );
       if (decision === undefined) {
-        output.appendLine(`Workflow "${run.workflow.id}" dismissed at approval checkpoint "${step.id}".`);
+        publishWorkflowProgress(runId, run, "Paused", "Approval dialog dismissed. Resume this saved run with AI Chatbox: Resume Workflow.");
+        output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" paused at approval checkpoint "${step.id}".`);
         return;
       }
       run = decideWorkflowApproval(run, step.id, decision === "Approve and Continue");
-      if (run.status === "cancelled") {
-        output.appendLine(`Workflow "${run.workflow.id}" denied at checkpoint "${step.id}".`);
-        void vscode.window.showInformationMessage(`Workflow "${run.workflow.name}" was cancelled because an approval checkpoint was denied.`);
-        return;
-      }
+    }
+
+    await saveWorkflowRun(context, runId, run);
+    if (run.status === "cancelled") {
+      publishWorkflowProgress(runId, run, "Cancelled", `Approval denied at checkpoint "${step.title}".`);
+      output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" denied at checkpoint "${step.id}".`);
+      void vscode.window.showInformationMessage(`Workflow "${run.workflow.name}" was cancelled because an approval checkpoint was denied.`);
+      return;
     }
   }
-  output.appendLine(`Workflow "${run.workflow.id}" version ${run.workflow.version} completed.`);
+
+  publishWorkflowProgress(runId, run, "Completed", "All workflow steps are complete.");
+  output.appendLine(`Workflow "${run.workflow.id}" version ${run.workflow.version} run "${runId}" completed.`);
   void vscode.window.showInformationMessage(`Workflow completed: ${run.workflow.name} (v${run.workflow.version}).`);
+}
+
+async function runSelectedWorkflow(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
+  const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("workflowsEnabled", false);
+  if (!enabled) {
+    void vscode.window.showWarningMessage(
+      "Workflow loading is disabled. Set aiChatbox.workflowsEnabled to true to opt in, then run this command again."
+    );
+    return;
+  }
+
+  const files = await collectWorkflowFiles(context, output);
+  const loaded = loadWorkflowFiles(files);
+  for (const rejected of loaded.rejected) output.appendLine(`Skipped workflow file "${rejected.path}": ${rejected.reason}`);
+  const workflows = getRunnableWorkflows(loaded.registry.list());
+  if (!workflows.length) {
+    const detail = loaded.rejected.length ? ` ${loaded.rejected.length} file(s) were skipped; see AI Chatbox Workflows output for details.` : "";
+    void vscode.window.showInformationMessage(
+      `No enabled workflows found. Add JSON files to .ai-chatbox/workflows/ or the AI Chatbox user storage workflows/ directory.${detail}`
+    );
+    return;
+  }
+  if (loaded.rejected.length) output.appendLine(`Loaded ${loaded.loaded} workflow file(s); ${loaded.rejected.length} file(s) rejected.`);
+
+  const selected = await vscode.window.showQuickPick(workflows.map((workflow) => ({
+    label: workflow.name,
+    description: `${workflow.id} · v${workflow.version}`,
+    detail: workflow.description,
+    workflow
+  })), { title: "Run AI Chatbox Workflow", placeHolder: "Choose a reviewed workflow definition" });
+  if (!selected) return;
+
+  const runId = `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  await executeWorkflowRun(context, output, runId, startWorkflow(selected.workflow));
+}
+
+async function resumeWorkflowRun(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
+  const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("workflowsEnabled", false);
+  if (!enabled) {
+    void vscode.window.showWarningMessage("Set aiChatbox.workflowsEnabled to true before resuming workflows.");
+    return;
+  }
+  const records = validateSavedWorkflowRecords(context.globalState.get<unknown>(WORKFLOW_RUNS_KEY))
+    .filter((record) => record.run.status === "running" || record.run.status === "awaiting-approval");
+  if (!records.length) {
+    void vscode.window.showInformationMessage("No resumable workflow runs were found.");
+    return;
+  }
+  const selected = await vscode.window.showQuickPick(records.map((record) => ({
+    label: record.run.workflow.name,
+    description: `${record.run.workflow.id} · v${record.run.workflow.version} · ${record.run.status}`,
+    detail: `Run ${record.runId} · step ${Math.min(record.run.stepIndex + 1, record.run.workflow.steps.length)} of ${record.run.workflow.steps.length}`,
+    record
+  })), { title: "Resume AI Chatbox Workflow", placeHolder: "Resumes the saved workflow version and step state" });
+  if (!selected) return;
+  await executeWorkflowRun(context, output, selected.record.runId, selected.record.run);
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -173,6 +247,9 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const runWorkflow = vscode.commands.registerCommand("aiChatbox.runWorkflow", async () => {
     await runSelectedWorkflow(context, workflowOutput);
+  });
+  const resumeWorkflow = vscode.commands.registerCommand("aiChatbox.resumeWorkflow", async () => {
+    await resumeWorkflowRun(context, workflowOutput);
   });
   const showWorkflowDiagnostics = vscode.commands.registerCommand("aiChatbox.showWorkflowDiagnostics", () => {
     workflowOutput.show(true);
@@ -352,7 +429,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
     connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
-    showMcpStatus, showMcpOutput, runWorkflow, showWorkflowDiagnostics
+    showMcpStatus, showMcpOutput, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
   );
 }
 

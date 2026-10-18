@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 7 — VSIX packaging.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 15 — resumable workflows.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -27,7 +27,9 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Agent runtime with model adapter interface, tool registry, argument validation, explicit permission service, iteration/output/history bounds, and cancellation
 - Safe default permission implementation that denies tool calls unless an approval decision explicitly allows them
 - Deterministic fake-model tests for tool execution, denial, invalid arguments, unknown tools, cancellation, and limits
-- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default\n- Pure TypeScript workflow/SOP registry and state machine with versioned manifests, bounded sequential steps, explicit approval checkpoints, and cancellation on denial
+- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default
+- Versioned workflow/SOP definitions with bounded loading and explicit approval checkpoints
+- Live workflow progress cards in chat and validated run snapshots that can be resumed after restarting VS Code
 
 ## Prerequisites
 
@@ -83,7 +85,8 @@ Only connect to servers you trust: an MCP server may access data or perform oper
 | `aiChatbox.baseUrl` | `http://localhost:11434/v1` | Base URL for compatible endpoints; ignored for OpenAI |
 | `aiChatbox.requestTimeoutMs` | `120000` | Request timeout, from 1 to 300 seconds |
 | `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
-| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |\n| `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
+| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
+| `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
 
 To rebuild automatically while editing:
 
@@ -105,6 +108,10 @@ code --install-extension ./ai-chatbox-0.5.0.vsix
 
 Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git. The chat UI includes keyboard-visible focus, a live conversation region, status announcements, and explicit approve-once/deny controls; screen-reader behavior should still be verified in the target VS Code environment.
 
+### Workflows and SOPs
+
+Workflow loading is disabled by default. Set `aiChatbox.workflowsEnabled` to `true`, then use **AI Chatbox: Run Workflow**. Workflow progress appears in the chat panel when it is open. If a dialog is dismissed, use **AI Chatbox: Resume Workflow** to continue from the saved workflow version and step. Up to 10 validated run snapshots are persisted in extension global state (bounded to 200 KB total). Workflow steps display instructions and approval checkpoints only; they do not execute arbitrary code or grant tool permissions. See [the workflow guide](docs/WORKFLOWS.md).
+
 ### Skills
 
 Skill loading is disabled by default. To opt in, set `aiChatbox.skillsEnabled` to `true`. Workspace manifests go in `.ai-chatbox/skills/*.json`; user manifests go in the AI Chatbox extension global-storage `skills/` directory. See [the skills guide](docs/SKILLS.md) and [example manifest](docs/examples/typescript-debugging.skill.json). Skills are untrusted text guidance: the loader does not execute scripts or add tools, and every tool invocation still requires approval.
@@ -118,15 +125,20 @@ src/
   modelClient.ts    OpenAI-compatible HTTP/SSE chat client
   agentModelAdapter.ts  Structured Chat Completions tool-call adapter
   agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
-  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation\n  workflowRuntime.ts Versioned workflow definitions and approval-gated state machine
+  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation
+  workflowRuntime.ts Versioned workflow definitions and approval-gated state machine
+  workflowRunStore.ts Validated, bounded workflow run persistence
 test/
   modelClient.test.cjs   Focused model client tests
   agentRuntime.test.cjs  Deterministic agent runtime tests
   agentModelAdapter.test.cjs  Structured tool-call adapter tests
-  mcpManager.test.cjs    MCP configuration and safety tests\n  workflowRuntime.test.cjs Workflow validation and approval-transition tests
+  mcpManager.test.cjs    MCP configuration and safety tests
+  workflowRuntime.test.cjs Workflow validation and approval-transition tests
+  workflowRunStore.test.cjs Persistence validation and resume-state tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
-  ROADMAP.md        Incremental implementation plan\n  WORKFLOWS.md      Workflow manifest and runtime contract
+  ROADMAP.md        Incremental implementation plan
+  WORKFLOWS.md      Workflow manifest and runtime contract
 .vscode/
   launch.json       F5 Extension Development Host configuration
   tasks.json        Build task
@@ -159,7 +171,7 @@ Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md)
 
 1. Package and install a VSIX, plus improve connection/approval presentation
 2. Conversation persistence and richer settings/approval UX
-3. Skills, SOP/workflows, and knowledge retrieval
+3. Local knowledge indexing and retrieval; workflow conditions and bounded retry policies
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for acceptance criteria and status.
 
