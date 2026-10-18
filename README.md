@@ -10,7 +10,8 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Theme-aware chat UI with Enter-to-send and Shift+Enter for a newline
 - Streaming chat client support, agent Stop/cancel control, bounded conversation history, and readable errors
 - OpenAI-compatible structured tool calls routed through the agent runtime
-- Per-call approval UI showing tool arguments; denied tools are not executed
+- Per-call approval UI showing tool arguments, with explicit one-invocation approval and deny controls
+- Accessible conversation/status announcements, keyboard-focused approval prompts, and a settings shortcut
 - Read-only workspace file listing tool with a 100-path limit
 - MCP client for stdio and Streamable HTTP, with explicit connection approval
 - MCP server status command showing connection state, transport, discovered tool count, and recent connection errors
@@ -100,7 +101,7 @@ This runs type-checking and the production build, then creates `ai-chatbox-0.5.0
 code --install-extension ./ai-chatbox-0.5.0.vsix
 ```
 
-Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git.
+Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git. The chat UI includes keyboard-visible focus, a live conversation region, status announcements, and explicit approve-once/deny controls; screen-reader behavior should still be verified in the target VS Code environment.
 
 ## Project layout
 
