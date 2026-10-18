@@ -1,4 +1,4 @@
-import { AgentMessage } from "./agentRuntime";
+import { AgentMessage, AgentToolCall } from "./agentRuntime";
 
 export const MAX_HISTORY_MESSAGES = 40;
 export const MAX_STORED_CONVERSATION_BYTES = 250_000;
@@ -42,7 +42,7 @@ export function validateStoredConversation(value: unknown): AgentMessage[] {
         continue;
       }
       if (!Array.isArray(item.toolCalls) || item.toolCalls.length > MAX_TOOL_CALLS_PER_MESSAGE) return [];
-      const calls = [];
+      const calls: AgentToolCall[] = [];
       for (const call of item.toolCalls) {
         if (!isRecord(call) ||
             typeof call.id !== "string" || !call.id.length || call.id.length > MAX_TOOL_IDENTIFIER_CHARS ||
