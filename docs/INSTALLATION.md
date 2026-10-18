@@ -21,6 +21,17 @@ code --install-extension ./ai-chatbox-0.5.0.vsix
 
 Alternatively, open VS Code → Extensions → **…** → **Install from VSIX…** and select the file. Reload the window if VS Code prompts you.
 
+## Automated Extension Development Host test
+
+The integration test launches a real VS Code Extension Development Host and verifies extension activation, core command registration, documented command contributions, opt-in privacy-sensitive settings defaults, and the Open Chat command entry point. It does not call a model API or connect to an MCP server.
+
+```bash
+npm install
+npm run test:integration
+```
+
+The first run downloads a compatible VS Code test instance. CI runs this alongside unit tests and VSIX packaging. This automated check complements—but does not replace—the manual checks below, especially live model responses, trusted MCP interoperability, keyboard-only navigation, and screen-reader behavior.
+
 ## Smoke-test checklist
 
 1. Open the Command Palette and run **AI Chatbox: Open Chat**.
