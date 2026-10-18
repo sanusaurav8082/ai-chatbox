@@ -21,7 +21,7 @@ test("sends structured tools to OpenAI-compatible endpoint and parses tool calls
       body = JSON.parse(init.body);
       return new Response(JSON.stringify({
         choices: [{ message: { role: "assistant", content: null, tool_calls: [{
-          id: "call-1", type: "function", function: { name: "list_workspace_files", arguments: "{\\"pattern\\":\\"src/**/*.ts\\"}" }
+          id: "call-1", type: "function", function: { name: "list_workspace_files", arguments: JSON.stringify({ pattern: "src/**/*.ts" }) }
         }] } }]
       }), { status: 200 });
     }
@@ -48,11 +48,11 @@ test("serializes assistant tool calls and tool results in provider message forma
   });
   await adapter.complete(request([
     { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "list_workspace_files", arguments: {} }] },
-    { role: "tool", toolCallId: "call-1", name: "list_workspace_files", content: "{\\"files\\":[]}" }
+    { role: "tool", toolCallId: "call-1", name: "list_workspace_files", content: JSON.stringify({ files: [] }) }
   ], []));
   assert.equal(body.messages[0].tool_calls[0].function.arguments, "{}");
   assert.equal(body.messages[1].tool_call_id, "call-1");
-  assert.equal(body.messages[1].content, "{\\"files\\":[]}");
+  assert.equal(body.messages[1].content, JSON.stringify({ files: [] }));
 });
 
 test("returns a final assistant answer", async () => {
