@@ -72,7 +72,8 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Keep workflow approval separate from per-tool approval; workflows do not execute tools or arbitrary code.
 - [x] Integrate host-generated workflow progress into the chat webview and persist/resume validated run snapshots.
 - [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
-- [ ] Add knowledge sources, local indexing, and retrieval.
+- [x] Add opt-in local Markdown/text knowledge indexing and bounded lexical retrieval into request-scoped agent context.
+- [ ] Add richer source providers and optional semantic/vector retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
 
 ## Definition of done for a milestone
