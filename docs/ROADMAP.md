@@ -67,7 +67,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 
 - [x] Add a pure skill registry with versioned manifest validation, enable/disable controls, bounded metadata, and deterministic keyword-based context selection.
 - [x] Load skills from documented workspace/user locations only when explicitly enabled, and expose selected instructions to request-scoped agent context.
-- [ ] Add versioned workflows/SOPs and approval checkpoints.
+- [x] Add a pure versioned workflow manifest registry and immutable state machine for instruction steps and explicit approval checkpoints.\n- [ ] Add opt-in workflow file loading, chat/UI integration, and ensure tool actions still require per-invocation approval.\n- [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
 - [ ] Add knowledge sources, local indexing, and retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
 
