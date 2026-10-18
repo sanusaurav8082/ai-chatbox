@@ -1,0 +1,48 @@
+{
+  "name": "ai-chatbox",
+  "displayName": "AI Chatbox",
+  "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
+  "version": "0.1.0",
+  "publisher": "sanusaurav8082",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other", "Machine Learning"],
+  "keywords": ["ai", "chat", "agent", "mcp", "llm"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onCommand:aiChatbox.open"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiChatbox.open",
+        "title": "AI Chatbox: Open Chat"
+      }
+    ],
+    "configuration": {
+      "title": "AI Chatbox",
+      "properties": {
+        "aiChatbox.showWelcomeMessage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the welcome message when the chat opens."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check-types": "tsc --noEmit",
+    "vscode:prepublish": "npm run check-types && npm run build",
+    "package": "npm run vscode:prepublish && vsce package",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}
