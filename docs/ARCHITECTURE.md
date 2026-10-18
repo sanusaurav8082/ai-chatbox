@@ -11,7 +11,7 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 - **Model clients:** the chat client streams text over SSE; `agentModelAdapter` uses non-streaming OpenAI Chat Completions responses to preserve structured tool-call IDs and arguments. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
 - **Agent runtime:** connected to an OpenAI-compatible structured tool-call adapter and chat approval UI. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events.
 - **MCP manager:** owns explicitly approved stdio and Streamable HTTP connections, discovers tool schemas, validates arguments against JSON Schema, maps calls/results into the agent's internal tool format, and closes transports on disconnect/deactivation.
-- **Skills:** when `aiChatbox.skillsEnabled` is explicitly enabled, the extension host loads bounded JSON manifests from workspace `.ai-chatbox/skills/` and user global storage, validates them through the skill registry, and adds up to five matching instructions to the current request. Skill context is labeled untrusted and never persisted as conversation history.
+- **Skills:** when `aiChatbox.skillsEnabled` is explicitly enabled, the extension host loads bounded JSON manifests from workspace `.ai-chatbox/skills/` and user global storage, validates them through the skill registry, and adds up to five matching instructions to the current request. Skill context is labeled untrusted and never persisted as conversation history.\n- **Workflow runtime:** validates versioned SOP definitions and advances an immutable, sequential run state machine. Instruction steps require an explicit host transition; approval checkpoints pause the run until a matching approval decision. The current pure runtime does not load workflow files or execute tools.
 
 ## Intended message flow
 
@@ -68,10 +68,10 @@ The current implementation supports stdio and Streamable HTTP with static bearer
 ## Future extension points
 
 - **Skills:** versioned JSON manifests with instructions and keywords; discovery is opt-in, instructions are plain text, and scripts/resources are not executed.
-- **Workflows/SOPs:** versioned step definitions with conditions, retries, and approval checkpoints.
+- **Workflows/SOPs:** versioned step definitions with explicit approval checkpoints. The first runtime slice supports instruction and approval steps; conditions, retries, file discovery, and UI integration are future work.
 - **Knowledge:** local files, SQLite full-text search, and eventually optional embedding/vector retrieval.
 
-## Agent runtime contract
+## Workflow runtime contract\n\n`workflowRuntime.ts` validates stable IDs, semantic versions, unique step IDs, supported step types, and bounded workflow/step text. A run snapshots the chosen version so registry updates cannot change an active run. A denied checkpoint cancels the workflow. Workflow approval is not a substitute for tool authorization: every actual tool call must continue to pass through the agent runtime's per-invocation permission service. Workflow definitions are untrusted data and are never evaluated as code. See [the workflow guide](WORKFLOWS.md).\n\n## Agent runtime contract
 
 The runtime is intentionally provider-independent. A model adapter returns either a final text turn or a set of proposed tool calls. Registered tools supply an input validator and an executor. The permission service must explicitly return `allow`; any other decision is treated as denial. Tool output is serialized and truncated before being returned to the model. The runtime also limits iterations, tool calls per turn, history length, and output size.
 

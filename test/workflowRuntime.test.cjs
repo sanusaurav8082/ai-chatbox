@@ -1,0 +1,99 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  WorkflowRegistry,
+  parseWorkflowManifest,
+  startWorkflow,
+  getCurrentWorkflowStep,
+  completeInstructionStep,
+  decideWorkflowApproval
+} = require("../dist/workflowRuntime.js");
+
+const deployWorkflow = {
+  id: "release.deploy",
+  version: "1.2.0",
+  name: "Release deployment",
+  description: "A staged release checklist with explicit approval checkpoints.",
+  steps: [
+    { id: "inspect", type: "instruction", title: "Inspect changes", instructions: "Review the change summary, tests, and rollback plan." },
+    { id: "release-approval", type: "approval", title: "Approve release", prompt: "Confirm the release and rollback plan before proceeding." },
+    { id: "verify", type: "instruction", title: "Verify release", instructions: "Check the deployment health and report the result." }
+  ]
+};
+
+test("parses a versioned workflow and normalizes text", () => {
+  const parsed = parseWorkflowManifest({ ...deployWorkflow, name: " Release deployment " });
+  assert.equal(parsed.version, "1.2.0");
+  assert.equal(parsed.name, "Release deployment");
+  assert.equal(parsed.steps.length, 3);
+});
+
+test("rejects invalid IDs, non-semver versions, duplicate steps, and unknown step types", () => {
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, id: "../bad" }), /workflow id/i);
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, version: "latest" }), /semantic version/i);
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [deployWorkflow.steps[0], deployWorkflow.steps[0]] }), /unique/i);
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [{ id: "bad", type: "shell", title: "Run", command: "echo hi" }] }), /step type/i);
+});
+
+test("bounds workflow count, step count, and text size", () => {
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [] }), /between 1 and 50/);
+  assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [{ id: "large", type: "instruction", title: "Large", instructions: "x".repeat(8001) }] }), /8000/);
+  const registry = new WorkflowRegistry();
+  for (let i = 0; i < 100; i++) registry.register({ ...deployWorkflow, id: `workflow-${i}` });
+  assert.throws(() => registry.register({ ...deployWorkflow, id: "another-workflow" }), /limit/i);
+});
+
+test("registry returns copies and supports disabling workflows", () => {
+  const registry = new WorkflowRegistry();
+  registry.register(deployWorkflow);
+  const copy = registry.get("release.deploy");
+  copy.steps[0].title = "mutated";
+  assert.equal(registry.get("release.deploy").steps[0].title, "Inspect changes");
+  assert.equal(registry.setEnabled("release.deploy", false), true);
+  assert.equal(registry.setEnabled("missing", false), false);
+  assert.throws(() => startWorkflow(registry.get("release.deploy")), /disabled/i);
+});
+
+test("workflow pauses at approval checkpoints and continues only after approval", () => {
+  let run = startWorkflow(deployWorkflow);
+  assert.equal(run.status, "running");
+  assert.equal(getCurrentWorkflowStep(run).id, "inspect");
+
+  run = completeInstructionStep(run, "inspect");
+  assert.equal(run.status, "awaiting-approval");
+  assert.equal(getCurrentWorkflowStep(run).id, "release-approval");
+  assert.throws(() => completeInstructionStep(run, "release-approval"), /current instruction/i);
+
+  run = decideWorkflowApproval(run, "release-approval", true);
+  assert.equal(run.status, "running");
+  assert.equal(getCurrentWorkflowStep(run).id, "verify");
+
+  run = completeInstructionStep(run, "verify");
+  assert.equal(run.status, "completed");
+  assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "approved", "completed"]);
+});
+
+test("denying an approval checkpoint cancels the workflow without advancing", () => {
+  let run = startWorkflow(deployWorkflow);
+  run = completeInstructionStep(run, "inspect");
+  run = decideWorkflowApproval(run, "release-approval", false);
+  assert.equal(run.status, "cancelled");
+  assert.equal(run.stepIndex, 1);
+  assert.equal(run.outcomes.at(-1).outcome, "denied");
+  assert.throws(() => decideWorkflowApproval(run, "release-approval", true), /awaiting/i);
+});
+
+test("an approval checkpoint at the beginning pauses immediately", () => {
+  const run = startWorkflow({ ...deployWorkflow, steps: [deployWorkflow.steps[1]] });
+  assert.equal(run.status, "awaiting-approval");
+  assert.equal(getCurrentWorkflowStep(run).type, "approval");
+});
+
+test("workflow transitions are immutable and require the exact current step", () => {
+  const original = startWorkflow(deployWorkflow);
+  assert.throws(() => completeInstructionStep(original, "verify"), /current instruction/i);
+  const advanced = completeInstructionStep(original, "inspect");
+  assert.equal(original.stepIndex, 0);
+  assert.equal(original.outcomes.length, 0);
+  assert.equal(advanced.stepIndex, 1);
+});

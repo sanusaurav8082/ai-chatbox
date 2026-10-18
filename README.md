@@ -27,7 +27,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Agent runtime with model adapter interface, tool registry, argument validation, explicit permission service, iteration/output/history bounds, and cancellation
 - Safe default permission implementation that denies tool calls unless an approval decision explicitly allows them
 - Deterministic fake-model tests for tool execution, denial, invalid arguments, unknown tools, cancellation, and limits
-- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default
+- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default\n- Pure TypeScript workflow/SOP registry and state machine with versioned manifests, bounded sequential steps, explicit approval checkpoints, and cancellation on denial
 
 ## Prerequisites
 
@@ -118,15 +118,15 @@ src/
   modelClient.ts    OpenAI-compatible HTTP/SSE chat client
   agentModelAdapter.ts  Structured Chat Completions tool-call adapter
   agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
-  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation
+  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation\n  workflowRuntime.ts Versioned workflow definitions and approval-gated state machine
 test/
   modelClient.test.cjs   Focused model client tests
   agentRuntime.test.cjs  Deterministic agent runtime tests
   agentModelAdapter.test.cjs  Structured tool-call adapter tests
-  mcpManager.test.cjs    MCP configuration and safety tests
+  mcpManager.test.cjs    MCP configuration and safety tests\n  workflowRuntime.test.cjs Workflow validation and approval-transition tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
-  ROADMAP.md        Incremental implementation plan
+  ROADMAP.md        Incremental implementation plan\n  WORKFLOWS.md      Workflow manifest and runtime contract
 .vscode/
   launch.json       F5 Extension Development Host configuration
   tasks.json        Build task
