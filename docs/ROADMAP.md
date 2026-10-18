@@ -2,23 +2,26 @@
 
 The roadmap is intentionally incremental. Each milestone should leave the main branch in a buildable state.
 
-## Phase 1 — Foundation (current)
+## Phase 1 — Foundation
 
 - [x] Create extension manifest and TypeScript build.
 - [x] Register `AI Chatbox: Open Chat`.
 - [x] Render a theme-aware webview chat UI.
 - [x] Add a validated, bounded webview-to-host message bridge.
 - [x] Add a strict starter CSP and no local webview resource access.
-- [ ] Verify build and run in the VS Code Extension Development Host.
-- [ ] Add automated tests and CI.
+- [x] Add a CI workflow for type-checking, build, and tests.
+- [ ] Verify interactively in the VS Code Extension Development Host.
 
-## Phase 2 — Model connectivity
+## Phase 2 — Model connectivity (implementation in this PR)
 
-- [ ] Define model/provider interfaces and capabilities.
-- [ ] Add provider configuration and SecretStorage-backed credentials.
-- [ ] Add one cloud provider and one OpenAI-compatible local endpoint.
-- [ ] Stream model output to the chat UI.
-- [ ] Handle cancellation, timeouts, and provider errors.
+- [x] Define a small model client contract and provider configuration.
+- [x] Add OpenAI provider and OpenAI-compatible endpoint support.
+- [x] Store the OpenAI API key in VS Code SecretStorage.
+- [x] Stream model output to the chat UI.
+- [x] Handle cancellation, timeouts, and provider errors.
+- [x] Keep bounded in-memory conversation history for the current panel.
+- [x] Add deterministic tests for endpoint validation, streaming, missing credentials, and HTTP errors.
+- [ ] Verify against a live local model or OpenAI API from VS Code.
 
 ## Phase 3 — Agent runtime
 
@@ -41,8 +44,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 ## Phase 5 — Extension experience
 
 - [ ] Package and install a VSIX.
-- [ ] Add CI for type-checking, tests, and packaging.
-- [ ] Add conversation persistence and settings UI.
+- [ ] Add conversation persistence and richer settings/approval presentation.
 - [ ] Improve accessibility and error/approval presentation.
 
 ## Phase 6 — Extensibility
