@@ -732,7 +732,6 @@ window.addEventListener("message", (event) => {
     addMessage("assistant", message.attached
       ? "MCP reference attached to the next message: " + String(message.label || "selected content") + ". It will be sent to the configured model once, as untrusted reference data."
       : "Pending MCP reference attachment cleared.");
-  }
   } else if (message.type === "toolEvent") renderToolEvent(message);
   else if (message.type === "toolApprovalRequest") renderApproval(message);
   else if (message.type === "assistantDone") {
