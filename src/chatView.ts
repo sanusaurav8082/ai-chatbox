@@ -71,7 +71,16 @@ export class ChatView {
 
         if (message.type === "send" && typeof message.text === "string") {
           const text = message.text.trim();
-          if (!text || text.length > MAX_PROMPT_LENGTH || ChatView.activeRequest) {
+          if (!text || ChatView.activeRequest) {
+            return;
+          }
+          if (text.length > MAX_PROMPT_LENGTH) {
+            await panel.webview.postMessage({ type: "assistantStart" } satisfies ModelUiMessage);
+            await panel.webview.postMessage({
+              type: "assistantError",
+              text: `Message is too long. Keep prompts under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`
+            } satisfies ModelUiMessage);
+            await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
             return;
           }
           await ChatView.runModelRequest(context, panel, text);
@@ -205,7 +214,7 @@ export class ChatView {
     <section id="messages" aria-live="polite" aria-label="Conversation"></section>
     <div class="hint">Configure aiChatbox.provider, aiChatbox.modelId and aiChatbox.baseUrl in Settings. Use the command palette to manage your OpenAI API key.</div>
     <form id="composer">
-      <textarea id="prompt" aria-label="Message" placeholder="Ask something..." required></textarea>
+      <textarea id="prompt" aria-label="Message" placeholder="Ask something..." maxlength="20000" required></textarea>
       <button id="send" type="submit">Send</button>
       <button id="cancel" type="button">Stop</button>
     </form>
