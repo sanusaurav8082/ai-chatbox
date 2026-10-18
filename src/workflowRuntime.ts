@@ -10,6 +10,8 @@ export interface InstructionWorkflowStep {
   title: string;
   instructions: string;
   condition?: WorkflowCondition;
+  /** Total allowed attempts, including the first attempt; defaults to 1. */
+  retryPolicy?: { maxAttempts: number };
 }
 export interface ApprovalWorkflowStep {
   id: string;
@@ -33,14 +35,16 @@ export interface RegisteredWorkflow extends WorkflowManifest { enabled: boolean;
 export interface WorkflowStepOutcome {
   stepId: string;
   type: WorkflowStep["type"];
-  outcome: "completed" | "approved" | "denied" | "skipped";
+  outcome: "completed" | "approved" | "denied" | "skipped" | "failed";
 }
-export type WorkflowRunStatus = "running" | "awaiting-approval" | "completed" | "cancelled";
+export type WorkflowRunStatus = "running" | "awaiting-approval" | "awaiting-retry" | "completed" | "cancelled";
 export interface WorkflowRun {
   workflow: RegisteredWorkflow;
   stepIndex: number;
   status: WorkflowRunStatus;
   outcomes: WorkflowStepOutcome[];
+  /** Counts are stored only after a retry; an absent entry means attempt 1. */
+  attempts: Record<string, number>;
 }
 export const MAX_WORKFLOWS = 100;
 export const MAX_WORKFLOW_STEPS = 50;
@@ -83,7 +87,15 @@ export function parseWorkflowManifest(value: unknown): WorkflowManifest {
       const instructions = candidate.instructions;
       if (typeof instructions !== "string" || !instructions.trim() || instructions.length > MAX_WORKFLOW_STEP_TEXT) throw new Error("Workflow instructions are empty or exceed 8000 characters.");
       totalText += title.length + instructions.length;
-      return { id: stepId, type, title: title.trim(), instructions: instructions.trim(), ...(condition ? { condition } : {}) };
+      let retryPolicy: InstructionWorkflowStep["retryPolicy"];
+      if (candidate.retryPolicy !== undefined) {
+        const policy = candidate.retryPolicy;
+        if (!isRecord(policy) || !Number.isInteger(policy.maxAttempts) || (policy.maxAttempts as number) < 1 || (policy.maxAttempts as number) > 3) {
+          throw new Error("Instruction retryPolicy.maxAttempts must be an integer from 1 to 3 (total attempts).");
+        }
+        retryPolicy = { maxAttempts: policy.maxAttempts as number };
+      }
+      return { id: stepId, type, title: title.trim(), instructions: instructions.trim(), ...(condition ? { condition } : {}), ...(retryPolicy ? { retryPolicy } : {}) };
     }
     if (type === "approval") {
       const prompt = candidate.prompt;
@@ -126,7 +138,7 @@ export function startWorkflow(value: unknown): WorkflowRun {
   const workflow = parseWorkflowManifest(value);
   if (workflow.enabled === false) throw new Error("Disabled workflows cannot be started.");
   const snapshot: RegisteredWorkflow = { ...workflow, enabled: true, steps: cloneSteps(workflow.steps) };
-  return advancePastUnmetConditions({ workflow: snapshot, stepIndex: 0, status: "running", outcomes: [] });
+  return advancePastUnmetConditions({ workflow: snapshot, stepIndex: 0, status: "running", outcomes: [], attempts: {} });
 }
 export function getCurrentWorkflowStep(run: WorkflowRun): WorkflowStep | undefined {
   return run.workflow.steps[run.stepIndex] ? cloneStep(run.workflow.steps[run.stepIndex]) : undefined;
@@ -136,6 +148,36 @@ export function completeInstructionStep(run: WorkflowRun, stepId: string): Workf
   const step = getCurrentWorkflowStep(run);
   if (run.status !== "running" || !step || step.type !== "instruction" || step.id !== stepId) throw new Error("Only the current instruction step in a running workflow can be completed.");
   return moveToNextStep(run, { stepId, type: "instruction", outcome: "completed" });
+}
+/** Return the current 1-based attempt number for an instruction step. */
+export function getWorkflowStepAttempt(run: WorkflowRun, stepId: string): number {
+  return run.attempts?.[stepId] ?? 1;
+}
+/** Record a failed manual instruction attempt. Exhausting the budget cancels the run. */
+export function failInstructionStep(run: WorkflowRun, stepId: string): WorkflowRun {
+  const step = getCurrentWorkflowStep(run);
+  if (run.status !== "running" || !step || step.type !== "instruction" || step.id !== stepId) {
+    throw new Error("Only the current instruction step in a running workflow can fail.");
+  }
+  const attempt = getWorkflowStepAttempt(run, stepId);
+  const maxAttempts = step.retryPolicy?.maxAttempts ?? 1;
+  if (attempt < maxAttempts) return { ...cloneRun(run), status: "awaiting-retry" };
+  return {
+    ...cloneRun(run),
+    status: "cancelled",
+    outcomes: [...run.outcomes.map(cloneOutcome), { stepId, type: "instruction", outcome: "failed" }]
+  };
+}
+/** Retry the current failed instruction only when its explicit total-attempt budget allows it. */
+export function retryInstructionStep(run: WorkflowRun, stepId: string): WorkflowRun {
+  const step = getCurrentWorkflowStep(run);
+  if (run.status !== "awaiting-retry" || !step || step.type !== "instruction" || step.id !== stepId) {
+    throw new Error("Only the current instruction awaiting retry can be retried.");
+  }
+  const attempt = getWorkflowStepAttempt(run, stepId);
+  const maxAttempts = step.retryPolicy?.maxAttempts ?? 1;
+  if (attempt >= maxAttempts) throw new Error("Workflow instruction retry limit has been reached.");
+  return { ...cloneRun(run), status: "running", attempts: { ...run.attempts, [stepId]: attempt + 1 } };
 }
 /** Approve or reject the current checkpoint. Rejection cancels the workflow. */
 export function decideWorkflowApproval(run: WorkflowRun, stepId: string, approved: boolean): WorkflowRun {
@@ -168,8 +210,8 @@ function advancePastUnmetConditions(run: WorkflowRun): WorkflowRun {
   return next;
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value && typeof value === "object" && !Array.isArray(value)); }
-function cloneStep(step: WorkflowStep): WorkflowStep { return { ...step, ...(step.condition ? { condition: { ...step.condition } } : {}) }; }
+function cloneStep(step: WorkflowStep): WorkflowStep { return { ...step, ...(step.condition ? { condition: { ...step.condition } } : {}), ...(step.type === "instruction" && step.retryPolicy ? { retryPolicy: { ...step.retryPolicy } } : {}) }; }
 function cloneSteps(steps: WorkflowStep[]): WorkflowStep[] { return steps.map(cloneStep); }
 function cloneWorkflow(workflow: RegisteredWorkflow): RegisteredWorkflow { return { ...workflow, steps: cloneSteps(workflow.steps) }; }
 function cloneOutcome(outcome: WorkflowStepOutcome): WorkflowStepOutcome { return { ...outcome }; }
-function cloneRun(run: WorkflowRun): WorkflowRun { return { ...run, workflow: cloneWorkflow(run.workflow), outcomes: run.outcomes.map(cloneOutcome) }; }
+function cloneRun(run: WorkflowRun): WorkflowRun { return { ...run, workflow: cloneWorkflow(run.workflow), outcomes: run.outcomes.map(cloneOutcome), attempts: { ...(run.attempts ?? {}) } }; }
