@@ -152,8 +152,8 @@ test("bounds tool output before feeding it back to the model", async () => {
 
 test("stops at the configured iteration limit", async () => {
   const model = fakeModel([
-    { type: "toolCalls", toolCalls: [] },
-    { type: "toolCalls", toolCalls: [] }
+    { type: "toolCalls", toolCalls: [{ id: "call-1", name: "missing", arguments: {} }] },
+    { type: "toolCalls", toolCalls: [{ id: "call-2", name: "missing", arguments: {} }] }
   ]);
   const runtime = new AgentRuntime({
     model,
