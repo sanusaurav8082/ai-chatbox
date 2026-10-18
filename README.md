@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 2 — model connectivity.** The chat supports streaming responses from OpenAI and OpenAI-compatible endpoints. The autonomous tool loop and MCP integration are not implemented yet.
+> **Current status: Phase 3 — agent runtime foundation.** Model connectivity is implemented, and a testable agent loop now supports tool proposals, argument validation, permission decisions, bounded execution, and cancellation. The current chat UI is not yet wired to model-generated tool calls; MCP integration follows in a later phase.
 
 ## Current features
 
@@ -14,6 +14,9 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Configurable provider, model ID, endpoint, and request timeout
 - Strict webview Content Security Policy; webview has no local file resource roots
 - Focused tests for endpoint validation, streaming, missing credentials, and HTTP errors
+- Agent runtime with model adapter interface, tool registry, argument validation, explicit permission service, iteration/output/history bounds, and cancellation
+- Safe default permission implementation that denies tool calls unless an approval decision explicitly allows them
+- Deterministic fake-model tests for tool execution, denial, invalid arguments, unknown tools, cancellation, and limits
 
 ## Prerequisites
 
@@ -83,8 +86,10 @@ src/
   extension.ts      Extension activation and secure key commands
   chatView.ts       Webview panel, message bridge, streaming UI
   modelClient.ts    OpenAI-compatible HTTP/SSE model client
+  agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
 test/
-  modelClient.test.cjs  Focused model client tests
+  modelClient.test.cjs   Focused model client tests
+  agentRuntime.test.cjs  Deterministic agent runtime tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
   ROADMAP.md        Incremental implementation plan
@@ -118,7 +123,7 @@ Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md)
 
 ## Planned work
 
-1. A transparent agent loop with tool approval and execution limits
+1. Wire provider-native tool calling into the agent runtime and expose approval events in the chat UI
 2. MCP client: stdio first, then Streamable HTTP
 3. Conversation persistence and richer settings/approval UX
 4. Skills, SOP/workflows, and knowledge retrieval
