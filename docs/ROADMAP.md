@@ -23,13 +23,15 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add deterministic tests for endpoint validation, streaming, missing credentials, and HTTP errors.
 - [ ] Verify against a live local model or OpenAI API from VS Code.
 
-## Phase 3 — Agent runtime
+## Phase 3 — Agent runtime foundation (implementation in this PR)
 
-- [ ] Define AgentEvent and AgentRuntime interfaces.
-- [ ] Implement the model/tool-call loop without hiding it behind an agent framework.
-- [ ] Add context assembly, conversation history, iteration bounds, and cancellation.
-- [ ] Add tool approval and execution policy services.
-- [ ] Add deterministic unit tests with a fake model adapter.
+- [x] Define typed AgentEvent, model adapter, tool, and AgentRuntime interfaces.
+- [x] Implement the provider-independent model/tool-call loop.
+- [x] Add bounded history, iteration count, per-turn tool-call count, and tool-output size.
+- [x] Validate tool inputs and require explicit permission before executing tools.
+- [x] Default to deny-all permissions when no approval policy is supplied.
+- [x] Add deterministic tests with a fake model adapter.
+- [ ] Wire provider-native tool calls and approval events into the chat UI.
 
 ## Phase 4 — MCP client
 
