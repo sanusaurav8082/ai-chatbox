@@ -62,7 +62,7 @@ test("returns a final answer without executing tools", async () => {
 test("asks permission before executing a proposed tool", async () => {
   const model = fakeModel([
     { type: "toolCalls", toolCalls: [{ id: "call-1", name: "echo", arguments: { text: "ok" } }] },
-    { type: "final", content: "The tool returned {"echoed":"ok"}." }
+    { type: "final", content: 'The tool returned {"echoed":"ok"}.' }
   ]);
   const decisions = [];
   const runtime = new AgentRuntime({
