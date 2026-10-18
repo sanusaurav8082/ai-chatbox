@@ -13,6 +13,7 @@ import { McpManager } from "./mcpManager";
 import { MAX_HISTORY_MESSAGES, toTranscriptMessages, validateStoredConversation } from "./conversationStore";
 import { formatSkillContext, loadSkillFiles, MAX_SKILL_FILES, MAX_SKILL_FILE_BYTES } from "./skillLoader";
 import { buildKnowledgeIndex, formatKnowledgeContext, searchKnowledge, MAX_KNOWLEDGE_FILES, MAX_KNOWLEDGE_FILE_BYTES } from "./knowledgeIndex";
+import { MAX_MCP_CONTEXT_CHARS } from "./mcpContext";
 
 export const OPENAI_API_KEY_SECRET = "aiChatbox.openaiApiKey";
 
@@ -31,7 +32,8 @@ type ModelUiMessage =
   | { type: "assistantError"; text: string }
   | { type: "toolEvent"; event: string; toolCallId: string; name: string; input?: unknown; output?: string }
   | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown }
-  | { type: "workflowProgress"; runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number; status: string; stepTitle?: string; detail?: string };
+  | { type: "workflowProgress"; runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number; status: string; stepTitle?: string; detail?: string }
+  | { type: "mcpContextStatus"; attached: boolean; label?: string };
 
 const MAX_PROMPT_LENGTH = 20_000;
 const MAX_TOOL_APPROVALS_PENDING = 8;
@@ -42,10 +44,34 @@ export class ChatView {
   private static activeRequest: AbortController | undefined;
   private static conversation: AgentMessage[] = [];
   private static conversationEpoch = 0;
+  private static pendingMcpContext: string | undefined;
+  private static pendingMcpContextLabel: string | undefined;
   private static pendingApprovals = new Map<string, {
     resolve: (decision: ToolApprovalDecision) => void;
     abort: () => void;
   }>();
+
+  static canAttachMcpContext(): boolean {
+    return Boolean(ChatView.currentPanel) && !ChatView.activeRequest;
+  }
+
+  static attachMcpContext(content: string, label: string): boolean {
+    if (!ChatView.canAttachMcpContext() || !content.trim() || content.length > MAX_MCP_CONTEXT_CHARS) return false;
+    ChatView.pendingMcpContext = content;
+    ChatView.pendingMcpContextLabel = label.slice(0, 200);
+    void ChatView.currentPanel!.webview.postMessage({
+      type: "mcpContextStatus", attached: true, label: ChatView.pendingMcpContextLabel
+    } satisfies ModelUiMessage);
+    return true;
+  }
+
+  static clearPendingMcpContext(): boolean {
+    if (!ChatView.currentPanel) return false;
+    ChatView.pendingMcpContext = undefined;
+    ChatView.pendingMcpContextLabel = undefined;
+    void ChatView.currentPanel.webview.postMessage({ type: "mcpContextStatus", attached: false } satisfies ModelUiMessage);
+    return true;
+  }
 
   static showWorkflowProgress(message: {
     runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number;
@@ -137,6 +163,8 @@ export class ChatView {
       ChatView.activeRequest = undefined;
       ChatView.currentPanel = undefined;
       ChatView.conversation = [];
+      ChatView.pendingMcpContext = undefined;
+      ChatView.pendingMcpContextLabel = undefined;
     });
   }
 
@@ -147,6 +175,9 @@ export class ChatView {
     mcpManager: McpManager
   ): Promise<void> {
     const controller = new AbortController();
+    const mcpContext = ChatView.pendingMcpContext;
+    ChatView.pendingMcpContext = undefined;
+    ChatView.pendingMcpContextLabel = undefined;
     const conversationEpoch = ChatView.conversationEpoch;
     ChatView.activeRequest = controller;
     ChatView.conversation.push({ role: "user", content: text });
@@ -208,7 +239,7 @@ export class ChatView {
         ChatView.getSkillContext(context, text),
         ChatView.getKnowledgeContext(context, text)
       ]);
-      const requestContext = [skillContext, knowledgeContext].filter(Boolean).join("\n\n");
+      const requestContext = [skillContext, knowledgeContext, mcpContext].filter(Boolean).join("\n\n");
       // Reserve one history slot for request-scoped context so bounded history cannot
       // trim retrieved reference material before the model sees it.
       const conversationForRequest = requestContext
@@ -404,6 +435,8 @@ export class ChatView {
       ChatView.pendingApprovals.delete(id);
     }
     ChatView.conversation = [];
+    ChatView.pendingMcpContext = undefined;
+    ChatView.pendingMcpContextLabel = undefined;
     await context.workspaceState.update(CONVERSATION_STORAGE_KEY, undefined);
     if (ChatView.currentPanel) {
       await ChatView.currentPanel.webview.postMessage({
@@ -695,6 +728,11 @@ window.addEventListener("message", (event) => {
     errorItem.textContent += (errorItem.textContent ? "\n\n" : "") + "Error: " + message.text;
     announce("Request failed: " + message.text);
   } else if (message.type === "workflowProgress" && typeof message.runId === "string" && typeof message.workflowName === "string") renderWorkflowProgress(message);
+  else if (message.type === "mcpContextStatus") {
+    addMessage("assistant", message.attached
+      ? "MCP reference attached to the next message: " + String(message.label || "selected content") + ". It will be sent to the configured model once, as untrusted reference data."
+      : "Pending MCP reference attachment cleared.");
+  }
   } else if (message.type === "toolEvent") renderToolEvent(message);
   else if (message.type === "toolApprovalRequest") renderApproval(message);
   else if (message.type === "assistantDone") {
