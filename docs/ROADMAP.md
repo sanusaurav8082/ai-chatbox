@@ -46,6 +46,8 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Discover tools and forward their JSON Schemas to compatible models.
 - [x] Validate tool arguments and gate execution through host-side per-call permissions.
 - [x] Add Streamable HTTP transport and SecretStorage-backed static bearer tokens.
+- [x] Browse MCP resources and preview bounded text content locally without automatically adding it to model context.
+- [x] Discover MCP prompts, collect declared string arguments, and preview returned messages locally.
 - [x] Add connection/disconnection commands, timeouts, pagination limits, and bounded tool output.
 - [ ] Add OAuth and optional config importers after canonical configuration is stable.
 - [ ] Verify interactively against a trusted local stdio server and remote Streamable HTTP server.
