@@ -65,13 +65,17 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
   );
   const controller = new AbortController();
   let timedOut = false;
-  const timeoutMs = Math.max(1_000, Math.min(config.requestTimeoutMs, 300_000));
+  const configuredTimeout = Number.isFinite(config.requestTimeoutMs)
+    ? config.requestTimeoutMs
+    : 120_000;
+  const timeoutMs = Math.max(1_000, Math.min(configuredTimeout, 300_000));
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
   const abortFromCaller = () => controller.abort();
   signal.addEventListener("abort", abortFromCaller, { once: true });
+  if (signal.aborted) controller.abort();
 
   try {
     const response = await (options.fetchImpl ?? fetch)(endpoint, {
