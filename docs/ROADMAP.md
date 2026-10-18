@@ -73,6 +73,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Integrate host-generated workflow progress into the chat webview and persist/resume validated run snapshots.
 - [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
 - [x] Add opt-in local Markdown/text knowledge indexing and bounded lexical retrieval into request-scoped agent context.
+- [x] Improve lexical ranking by ignoring common stopwords and requiring exact token matches; add regression tests for natural-language queries and substring false positives.
 - [ ] Add richer source providers and optional semantic/vector retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
 

@@ -23,6 +23,24 @@ test("search ranks lexical matches and title/path matches higher", () => {
   assert.ok(hits[0].score > 0);
 });
 
+test("ignores common stopwords so natural-language questions rank by useful terms", () => {
+  const index = buildKnowledgeIndex([
+    { path: "docs/payments.md", content: "# Payment retries\n\nRetry an invoice after checking its idempotency key." },
+    { path: "docs/deploy.md", content: "# Deployment\n\nCheck deployment health and worker logs." }
+  ]);
+  assert.equal(searchKnowledge(index.chunks, "what is the payment retry process?")[0].path, "docs/payments.md");
+  assert.deepEqual(searchKnowledge(index.chunks, "what is the and to"), []);
+});
+
+test("matches complete tokens rather than arbitrary substrings", () => {
+  const index = buildKnowledgeIndex([
+    { path: "docs/party.md", content: "# Party settings\n\nConfigure the party size for a booking." },
+    { path: "docs/article.md", content: "# Article\n\nRead the article before publishing." }
+  ]);
+  assert.deepEqual(searchKnowledge(index.chunks, "art"), []);
+  assert.equal(searchKnowledge(index.chunks, "party")[0].path, "docs/party.md");
+});
+
 test("returns no results for blank or unmatched queries and caps results", () => {
   const files = Array.from({ length: 8 }, (_, i) => ({ path: `doc-${i}.txt`, content: "shared unique token" }));
   const index = buildKnowledgeIndex(files);

@@ -1,6 +1,6 @@
 # Local knowledge: indexing and retrieval
 
-AI Chatbox can optionally retrieve relevant excerpts from local Markdown and text documents and include them in the current model request. The first version is intentionally small: deterministic lexical ranking, no embeddings, no remote index, and no persisted index.
+AI Chatbox can optionally retrieve relevant excerpts from local Markdown and text documents and include them in the current model request. Retrieval is deterministic and local: no embeddings, remote index, or persisted index is used.
 
 ## Enable it
 
@@ -17,11 +17,12 @@ Put personal reference notes in user storage if they should not be committed wit
 
 1. For each user message, the extension reads the bounded allowlisted files.
 2. Markdown is treated as text; headings provide titles and blank-line-separated paragraphs become chunks.
-3. A deterministic lexical scorer ranks chunks by query-token overlap, with small boosts for matching file paths and titles.
-4. Up to five excerpts (at most 12,000 characters combined) are added as request-scoped context.
-5. The prompt includes source paths so the model can cite which local files informed its answer.
+3. A deterministic lexical scorer tokenizes the query, document, title, and path. Common English stopwords are ignored, and matches require complete tokens rather than arbitrary substrings.
+4. Matching terms in titles and paths receive boosts; repeated matches have a small bounded boost. Ties are resolved by path and chunk order, so identical inputs produce stable rankings.
+5. Up to five excerpts (at most 12,000 characters combined) are added as request-scoped context.
+6. The prompt includes source paths so the model can cite which local files informed its answer.
 
-The index is rebuilt in memory per request; no content index is persisted. The implementation does not use embeddings, a vector database, or an external search service.
+This is a small lexical retriever, not semantic search: synonyms and concepts with no shared terms may not match. The index is rebuilt in memory per request; no content index is persisted. The implementation does not use embeddings, a vector database, or an external search service.
 
 ## Limits
 
