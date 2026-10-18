@@ -2,7 +2,7 @@
   "name": "ai-chatbox",
   "displayName": "AI Chatbox",
   "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "sanusaurav8082",
   "license": "MIT",
   "engines": {
@@ -11,12 +11,20 @@
   "categories": ["Other", "Machine Learning"],
   "keywords": ["ai", "chat", "agent", "mcp", "llm"],
   "main": "./dist/extension.js",
-  "activationEvents": ["onCommand:aiChatbox.open"],
+  "activationEvents": ["onCommand:aiChatbox.open", "onCommand:aiChatbox.setOpenAiApiKey", "onCommand:aiChatbox.clearOpenAiApiKey"],
   "contributes": {
     "commands": [
       {
         "command": "aiChatbox.open",
         "title": "AI Chatbox: Open Chat"
+      },
+      {
+        "command": "aiChatbox.setOpenAiApiKey",
+        "title": "AI Chatbox: Set OpenAI API Key"
+      },
+      {
+        "command": "aiChatbox.clearOpenAiApiKey",
+        "title": "AI Chatbox: Clear OpenAI API Key"
       }
     ],
     "configuration": {
@@ -26,6 +34,29 @@
           "type": "boolean",
           "default": true,
           "description": "Show the welcome message when the chat opens."
+        },
+        "aiChatbox.provider": {
+          "type": "string",
+          "enum": ["openai-compatible", "openai"],
+          "default": "openai-compatible",
+          "description": "Model API provider. Local endpoints should implement the OpenAI Chat Completions API."
+        },
+        "aiChatbox.modelId": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Model ID sent to the selected provider."
+        },
+        "aiChatbox.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434/v1",
+          "description": "Base URL for an OpenAI-compatible endpoint; ignored for the OpenAI provider."
+        },
+        "aiChatbox.requestTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Maximum time to wait for a model response, in milliseconds."
         }
       }
     }
@@ -36,7 +67,7 @@
     "check-types": "tsc --noEmit",
     "vscode:prepublish": "npm run check-types && npm run build",
     "package": "npm run vscode:prepublish && vsce package",
-    "test": "node --test"
+    "test": "npm run build && node --test test/*.test.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
