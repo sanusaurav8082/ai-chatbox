@@ -36,15 +36,16 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add a bounded, read-only workspace file-listing tool as the first executable tool.
 - [ ] Verify interactively against a local model that supports tool calling.
 
-## Phase 4 — MCP client
+## Phase 4 — MCP client (implementation in this PR)
 
-- [ ] Add server configuration schema and validation.
-- [ ] Connect to stdio MCP servers.
-- [ ] Discover tools and normalize schemas.
-- [ ] Gate tool execution through host-side permissions.
-- [ ] Add Streamable HTTP transport and authentication.
-- [ ] Add connection status, timeouts, and output limits.
-- [ ] Add optional config importers after canonical configuration is stable.
+- [x] Add server configuration schema and runtime validation.
+- [x] Connect to stdio MCP servers only after explicit confirmation.
+- [x] Discover tools and forward their JSON Schemas to compatible models.
+- [x] Validate tool arguments and gate execution through host-side per-call permissions.
+- [x] Add Streamable HTTP transport and SecretStorage-backed static bearer tokens.
+- [x] Add connection/disconnection commands, timeouts, pagination limits, and bounded tool output.
+- [ ] Add OAuth and optional config importers after canonical configuration is stable.
+- [ ] Verify interactively against a trusted local stdio server and remote Streamable HTTP server.
 
 ## Phase 5 — Extension experience
 
