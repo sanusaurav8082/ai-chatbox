@@ -39,7 +39,10 @@
     "onCommand:aiChatbox.clearConversation",
     "onCommand:aiChatbox.runWorkflow",
     "onCommand:aiChatbox.resumeWorkflow",
-    "onCommand:aiChatbox.showWorkflowDiagnostics"
+    "onCommand:aiChatbox.showWorkflowDiagnostics",
+    "onCommand:aiChatbox.attachMcpResource",
+    "onCommand:aiChatbox.attachMcpPrompt",
+    "onCommand:aiChatbox.clearMcpContext"
   ],
   "contributes": {
     "commands": [
@@ -102,6 +105,18 @@
       {
         "command": "aiChatbox.showWorkflowDiagnostics",
         "title": "AI Chatbox: Show Workflow Diagnostics"
+      },
+      {
+        "command": "aiChatbox.attachMcpResource",
+        "title": "AI Chatbox: Attach MCP Resource to Next Message"
+      },
+      {
+        "command": "aiChatbox.attachMcpPrompt",
+        "title": "AI Chatbox: Attach MCP Prompt to Next Message"
+      },
+      {
+        "command": "aiChatbox.clearMcpContext",
+        "title": "AI Chatbox: Clear Pending MCP Context"
       }
     ],
     "configuration": {

@@ -3,6 +3,7 @@ const http = require("node:http");
 const vscode = require("vscode");
 const { createAgentModelAdapter } = require("../../dist/agentModelAdapter.js");
 const { streamChatCompletion } = require("../../dist/modelClient.js");
+const { formatMcpContext } = require("../../dist/mcpContext.js");
 const {
   AgentRuntime,
   CallbackPermissionService
@@ -142,6 +143,47 @@ async function testStreamingModelClient() {
     });
   });
   assert.equal(deltas.join(""), "hello stream");
+}
+
+async function testMcpContextForwarding() {
+  const attachedContext = formatMcpContext(
+    { kind: "resource", serverName: "fixture", name: "release-notes" },
+    [{ label: "file:///release-notes.md", text: "Fixture release notes for the next release." }]
+  );
+  await withMockModelServer(async (body, response) => {
+    assert.equal(body.messages[0].role, "system");
+    assert.match(body.messages[0].content, /untrusted reference material/);
+    assert.match(body.messages[0].content, /release-notes/);
+    assert.match(body.messages[0].content, /Fixture release notes for the next release/);
+    assert.ok(body.messages.some((message) => message.role === "user" && /summarize/.test(message.content)));
+    return jsonResponse(response, {
+      choices: [{ message: { role: "assistant", content: "Reference context received." } }]
+    });
+  }, async (baseUrl) => {
+    const runtime = new AgentRuntime({
+      model: createAgentModelAdapter({
+        config: {
+          provider: "openai-compatible",
+          modelId: "integration-test-model",
+          baseUrl,
+          requestTimeoutMs: 5_000
+        }
+      }),
+      tools: [],
+      permissions: new CallbackPermissionService(async () => "deny"),
+      maxIterations: 2
+    });
+    const result = await runtime.run({
+      messages: [
+        { role: "system", content: attachedContext },
+        { role: "user", content: "Please summarize the attached release notes." }
+      ],
+      signal: new AbortController().signal,
+      onEvent: () => {}
+    });
+    assert.equal(result.finalText, "Reference context received.");
+    assert.equal(result.reason, "completed");
+  });
 }
 
 async function testAgentCancellation() {
@@ -348,6 +390,9 @@ async function run() {
     "aiChatbox.disconnectMcpServer",
     "aiChatbox.showMcpServerStatus",
     "aiChatbox.showMcpDiagnostics",
+    "aiChatbox.attachMcpResource",
+    "aiChatbox.attachMcpPrompt",
+    "aiChatbox.clearMcpContext",
     "aiChatbox.clearConversation",
     "aiChatbox.runWorkflow",
     "aiChatbox.resumeWorkflow",
@@ -374,6 +419,9 @@ async function run() {
   await vscode.commands.executeCommand("aiChatbox.open");
 
   // Exercise the actual HTTP adapter and agent loop against a local deterministic server.
+  await testStreamingModelClient();
+  await testAgentCancellation();
+  await testMcpContextForwarding();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");

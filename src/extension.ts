@@ -4,6 +4,7 @@ import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerC
 import { loadWorkflowFiles, getRunnableWorkflows, MAX_WORKFLOW_FILE_BYTES, WorkflowFile } from "./workflowLoader";
 import { WorkflowRun, completeInstructionStep, decideWorkflowApproval, failInstructionStep, getCurrentWorkflowStep, getWorkflowStepAttempt, retryInstructionStep, startWorkflow } from "./workflowRuntime";
 import { upsertSavedWorkflowRun, validateSavedWorkflowRecords } from "./workflowRunStore";
+import { formatMcpContext } from "./mcpContext";
 
 export const MCP_TOKEN_SECRET_PREFIX = "aiChatbox.mcpToken.";
 let mcpManager: McpManager | undefined;
@@ -131,6 +132,113 @@ async function browseMcpPrompts(manager: McpManager, output: vscode.OutputChanne
     output.show(true);
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not retrieve MCP prompt: ${error instanceof Error ? error.message.slice(0, 500) : "unknown error"}`);
+  }
+}
+
+async function attachMcpResourceToNextMessage(manager: McpManager, output: vscode.OutputChannel): Promise<void> {
+  if (!ChatView.canAttachMcpContext()) {
+    void vscode.window.showWarningMessage("Open AI Chatbox: Open Chat first, and wait for any active response to finish.");
+    return;
+  }
+  const serverName = await chooseConnectedMcpServer(manager, "Attach MCP Resource to Next Message");
+  if (!serverName) return;
+  try {
+    const resources = await manager.listResources(serverName);
+    if (!resources.length) {
+      void vscode.window.showInformationMessage(`MCP server "${serverName}" exposes no resources.`);
+      return;
+    }
+    const selected = await vscode.window.showQuickPick(resources.map((resource, index) => ({
+      label: resource.name || resource.uri,
+      description: resource.mimeType ?? "",
+      detail: `${safeResourceUri(resource.uri)}${resource.description ? ` — ${resource.description}` : ""}`,
+      index
+    })), { title: `Attach a resource from ${serverName}`, placeHolder: "Select one resource to review before sending it to the model" });
+    if (!selected) return;
+    const resource = resources[selected.index];
+    const contents = await manager.readResource(serverName, resource.uri);
+    const formatted = formatMcpContext(
+      { kind: "resource", serverName, name: resource.name },
+      contents.map((item) => ({ label: safeResourceUri(item.uri), text: item.text, note: item.note }))
+    );
+    output.appendLine(`Explicit attachment preview — MCP resource "${resource.name}" from "${serverName}".`);
+    output.appendLine("Content is untrusted and will only be sent after confirmation, with the next chat message.");
+    output.appendLine("=".repeat(72));
+    output.appendLine(formatted);
+    output.show(true);
+    const decision = await vscode.window.showWarningMessage(
+      `Attach MCP resource "${resource.name}" to the next chat message?`,
+      { modal: true, detail: `This sends the bounded resource text to your configured model once as untrusted reference data. Review the local "AI Chatbox MCP Content" output before continuing.\n\nPreview:\n${formatted.slice(0, 1_200)}${formatted.length > 1_200 ? "\n[Preview truncated]" : ""}` },
+      "Attach Once",
+      "Cancel"
+    );
+    if (decision !== "Attach Once") return;
+    if (!ChatView.attachMcpContext(formatted, `MCP resource ${resource.name} (${serverName})`)) {
+      void vscode.window.showWarningMessage("Could not attach the resource. Open chat and ensure no response is in progress.");
+      return;
+    }
+    void vscode.window.showInformationMessage("MCP resource attached to the next chat message only.");
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not attach MCP resource: ${error instanceof Error ? error.message.slice(0, 500) : "unknown error"}`);
+  }
+}
+
+async function attachMcpPromptToNextMessage(manager: McpManager, output: vscode.OutputChannel): Promise<void> {
+  if (!ChatView.canAttachMcpContext()) {
+    void vscode.window.showWarningMessage("Open AI Chatbox: Open Chat first, and wait for any active response to finish.");
+    return;
+  }
+  const serverName = await chooseConnectedMcpServer(manager, "Attach MCP Prompt to Next Message");
+  if (!serverName) return;
+  try {
+    const prompts = await manager.listPrompts(serverName);
+    if (!prompts.length) {
+      void vscode.window.showInformationMessage(`MCP server "${serverName}" exposes no prompts.`);
+      return;
+    }
+    const selected = await vscode.window.showQuickPick(prompts.map((prompt, index) => ({
+      label: prompt.name,
+      description: prompt.arguments.length ? `${prompt.arguments.length} argument(s)` : "No arguments",
+      detail: prompt.description,
+      index
+    })), { title: `Attach a prompt from ${serverName}`, placeHolder: "Select a prompt to review before sending it to the model" });
+    if (!selected) return;
+    const prompt = prompts[selected.index];
+    const args: Record<string, string> = {};
+    for (const argument of prompt.arguments) {
+      const value = await vscode.window.showInputBox({
+        title: `MCP prompt: ${prompt.name}`,
+        prompt: `${argument.name}${argument.required ? " (required)" : " (optional)"}${argument.description ? ` — ${argument.description}` : ""}`,
+        ignoreFocusOut: true,
+        validateInput: (input) => argument.required && !input.trim() ? "This argument is required." : undefined
+      });
+      if (value === undefined) return;
+      if (value.length) args[argument.name] = value;
+    }
+    const messages = await manager.getPrompt(serverName, prompt.name, args);
+    const formatted = formatMcpContext(
+      { kind: "prompt", serverName, name: prompt.name },
+      messages.map((message) => ({ label: `MCP message role: ${message.role}`, text: message.text }))
+    );
+    output.appendLine(`Explicit attachment preview — MCP prompt "${prompt.name}" from "${serverName}".`);
+    output.appendLine("Content is untrusted and will only be sent after confirmation, with the next chat message.");
+    output.appendLine("=".repeat(72));
+    output.appendLine(formatted);
+    output.show(true);
+    const decision = await vscode.window.showWarningMessage(
+      `Attach MCP prompt "${prompt.name}" to the next chat message?`,
+      { modal: true, detail: `This sends the bounded prompt text to your configured model once as untrusted reference data. Prompt messages are not elevated to system/developer roles. Review the local output before continuing.\n\nPreview:\n${formatted.slice(0, 1_200)}${formatted.length > 1_200 ? "\n[Preview truncated]" : ""}` },
+      "Attach Once",
+      "Cancel"
+    );
+    if (decision !== "Attach Once") return;
+    if (!ChatView.attachMcpContext(formatted, `MCP prompt ${prompt.name} (${serverName})`)) {
+      void vscode.window.showWarningMessage("Could not attach the prompt. Open chat and ensure no response is in progress.");
+      return;
+    }
+    void vscode.window.showInformationMessage("MCP prompt attached to the next chat message only.");
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not attach MCP prompt: ${error instanceof Error ? error.message.slice(0, 500) : "unknown error"}`);
   }
 }
 
@@ -507,6 +615,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const browseMcpPromptsCommand = vscode.commands.registerCommand("aiChatbox.browseMcpPrompts", async () => {
     await browseMcpPrompts(mcpManager!, mcpContentOutput);
   });
+  const attachMcpResourceCommand = vscode.commands.registerCommand("aiChatbox.attachMcpResource", async () => {
+    await attachMcpResourceToNextMessage(mcpManager!, mcpContentOutput);
+  });
+  const attachMcpPromptCommand = vscode.commands.registerCommand("aiChatbox.attachMcpPrompt", async () => {
+    await attachMcpPromptToNextMessage(mcpManager!, mcpContentOutput);
+  });
+  const clearMcpContextCommand = vscode.commands.registerCommand("aiChatbox.clearMcpContext", () => {
+    if (ChatView.clearPendingMcpContext()) {
+      void vscode.window.showInformationMessage("Pending MCP context attachment cleared.");
+    } else {
+      void vscode.window.showInformationMessage("Open AI Chatbox first; there is no active chat panel.");
+    }
+  });
 
   const showMcpOutput = vscode.commands.registerCommand("aiChatbox.showMcpDiagnostics", () => {
     mcpOutput.appendLine(`[${new Date().toISOString()}] Diagnostics output opened.`);
@@ -571,7 +692,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
     connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
-    showMcpStatus, showMcpOutput, browseMcpResourcesCommand, browseMcpPromptsCommand, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
+    showMcpStatus, showMcpOutput, browseMcpResourcesCommand, browseMcpPromptsCommand,
+    attachMcpResourceCommand, attachMcpPromptCommand, clearMcpContextCommand, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
   );
 }
 
