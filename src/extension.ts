@@ -12,7 +12,7 @@ function configuredServers(): Record<string, unknown> {
     : {};
 }
 
-function describeServer(name: string, config: McpServerConfig): string {
+function describeServer(config: McpServerConfig): string {
   if (config.transport === "stdio") {
     const commandLine = [config.command, ...(config.args ?? [])].join(" ");
     return `stdio command: ${commandLine.slice(0, 1_200)}${config.cwd ? `\nWorking directory: ${config.cwd}` : ""}`;
@@ -21,7 +21,7 @@ function describeServer(name: string, config: McpServerConfig): string {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  mcpManager = new McpManager((serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
+  mcpManager = new McpManager(async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
 
   const openChat = vscode.commands.registerCommand("aiChatbox.open", () => {
     ChatView.open(context, mcpManager!);
@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
 
-    const detail = describeServer(selected.label, config);
+    const detail = describeServer(config);
     const choice = await vscode.window.showWarningMessage(
       `Connecting starts a local process or contacts a remote MCP server. Its tools can request actions and may access data available to that server. Review the configuration before proceeding.\n\n${detail}`,
       { modal: true, detail: "Connection does not grant tool execution permission. Every tool call will still require a separate approval in the chat." },
