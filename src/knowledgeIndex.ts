@@ -25,7 +25,19 @@ export interface KnowledgeHit extends KnowledgeChunk {
   score: number;
 }
 
-const TOKEN_PATTERN = /[a-zA-Z0-9_+#.-]{2,}/g;
+const TOKEN_PATTERN = /[a-zA-Z0-9_+#]{2,}/g;
+// Ignore common question glue so it cannot dominate a query's useful terms.
+const STOP_WORDS = new Set([
+  "a", "about", "after", "all", "also", "am", "an", "and", "any", "are", "as", "at",
+  "be", "because", "been", "before", "being", "between", "both", "but", "by", "can",
+  "could", "did", "do", "does", "during", "each", "for", "from", "had", "has", "have",
+  "he", "her", "here", "hers", "him", "his", "how", "i", "if", "in", "into", "is",
+  "it", "its", "just", "me", "more", "most", "my", "no", "not", "of", "on", "or",
+  "our", "out", "over", "please", "same", "she", "should", "so", "some", "such",
+  "than", "that", "the", "their", "them", "then", "there", "these", "they", "this",
+  "those", "through", "to", "under", "up", "us", "very", "was", "we", "were", "what",
+  "when", "where", "which", "who", "why", "will", "with", "would", "you", "your"
+]);
 
 /** Build a deterministic, bounded lexical index from explicitly supplied local text files. */
 export function buildKnowledgeIndex(files: KnowledgeFile[]): KnowledgeIndexResult {
@@ -72,29 +84,46 @@ export function buildKnowledgeIndex(files: KnowledgeFile[]): KnowledgeIndexResul
   return { chunks, rejected, indexedFiles };
 }
 
-/** Rank chunks by query-token overlap with a small title/path boost; ties are deterministic. */
+/**
+ * Rank chunks by exact token overlap rather than substring matches. Common stopwords
+ * are ignored, title/path matches are boosted, and ties are stable across runs.
+ */
 export function searchKnowledge(index: KnowledgeChunk[], query: string, limit = MAX_KNOWLEDGE_RESULTS): KnowledgeHit[] {
   if (!query.trim() || !Number.isInteger(limit) || limit < 1) return [];
   const terms = [...new Set(tokenize(query))];
   if (!terms.length) return [];
-  const queryLower = query.toLocaleLowerCase();
+  const queryTerms = new Set(terms);
+  const normalizedQuery = terms.join(" ");
   const hits: KnowledgeHit[] = [];
+
   for (const chunk of index) {
-    const textLower = chunk.text.toLocaleLowerCase();
-    const titleLower = chunk.title.toLocaleLowerCase();
-    const pathLower = chunk.path.toLocaleLowerCase();
+    const textTerms = tokenize(chunk.text);
+    const textSet = new Set(textTerms);
+    const titleSet = new Set(tokenize(chunk.title));
+    const pathSet = new Set(tokenize(chunk.path));
     let score = 0;
     for (const term of terms) {
-      if (textLower.includes(term)) score += 1 + Math.min(2, countOccurrences(textLower, term) - 1) * 0.15;
-      if (titleLower.includes(term)) score += 2;
-      if (pathLower.includes(term)) score += 1;
+      if (textSet.has(term)) {
+        const frequency = textTerms.filter((candidate) => candidate === term).length;
+        score += 1 + Math.min(2, frequency - 1) * 0.15;
+      }
+      if (titleSet.has(term)) score += 2;
+      if (pathSet.has(term)) score += 1;
     }
     if (!score) continue;
-    if (queryLower.length >= 4 && textLower.includes(queryLower)) score += 3;
-    hits.push({ ...chunk, score });
+
+    const normalizedText = tokenize(chunk.text).join(" ");
+    if (normalizedQuery.length >= 4 && normalizedText.includes(normalizedQuery)) score += 2;
+    // Tiny queries that contain only common words intentionally produce no hits.
+    if (queryTerms.size > 0) hits.push({ ...chunk, score });
   }
   return hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path) || a.ordinal - b.ordinal)
     .slice(0, Math.min(limit, MAX_KNOWLEDGE_RESULTS));
+}
+
+function tokenize(text: string): string[] {
+  return (text.toLocaleLowerCase().match(TOKEN_PATTERN) ?? [])
+    .filter((term) => term.length > 1 && !STOP_WORDS.has(term));
 }
 
 /** Format retrieved chunks as untrusted request-scoped context with file-path citations. */
@@ -118,15 +147,6 @@ export function formatKnowledgeContext(hits: KnowledgeHit[]): string {
     remaining -= section.length + 2;
   }
   return sections.length ? (header + sections.join("\n\n")).slice(0, MAX_KNOWLEDGE_CONTEXT_CHARS) : "";
-}
-
-function tokenize(text: string): string[] {
-  return (text.toLocaleLowerCase().match(TOKEN_PATTERN) ?? []).filter((term) => term.length > 1);
-}
-function countOccurrences(text: string, term: string): number {
-  let count = 0, offset = 0;
-  while ((offset = text.indexOf(term, offset)) !== -1) { count++; offset += term.length; }
-  return count;
 }
 function extractTitle(path: string, content: string): string {
   const heading = content.match(/^\s*#\s+(.+)$/m)?.[1]?.trim();
