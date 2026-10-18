@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ChatView, OPENAI_API_KEY_SECRET } from "./chatView";
-import { McpManager, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
+import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
 
 export const MCP_TOKEN_SECRET_PREFIX = "aiChatbox.mcpToken.";
 let mcpManager: McpManager | undefined;
@@ -17,11 +17,25 @@ function describeServer(config: McpServerConfig): string {
     const commandLine = [config.command, ...(config.args ?? [])].join(" ");
     return `stdio command: ${commandLine.slice(0, 1_200)}${config.cwd ? `\nWorking directory: ${config.cwd}` : ""}`;
   }
-  return `Streamable HTTP endpoint: ${config.url}`;
+  return describeMcpServerEndpoint(config);
+}
+
+function safeErrorMessage(error: unknown, rawConfig?: unknown): string {
+  const message = error instanceof Error ? error.message : "unknown error";
+  try {
+    const config = parseMcpServerConfig(rawConfig);
+    if (config.transport === "streamable-http") {
+      const safeEndpoint = describeMcpServerEndpoint(config).replace("Streamable HTTP endpoint: ", "");
+      return message.split(config.url).join(safeEndpoint).slice(0, 2_000);
+    }
+  } catch { /* Configuration errors are already validated before logging. */ }
+  return message.slice(0, 2_000);
 }
 
 export function activate(context: vscode.ExtensionContext): void {
   mcpManager = new McpManager(async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
+  const mcpOutput = vscode.window.createOutputChannel("AI Chatbox MCP");
+  context.subscriptions.push(mcpOutput);
 
   const openChat = vscode.commands.registerCommand("aiChatbox.open", () => {
     ChatView.open(context, mcpManager!);
@@ -81,12 +95,62 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     if (choice !== "Connect") return;
 
+    mcpOutput.appendLine(`[${new Date().toISOString()}] Connecting to MCP server "${selected.label}" (${config.transport}).`);
     try {
       const tools = await mcpManager!.connect(selected.label, configured[selected.label]);
+      mcpManager!.clearConnectionError(selected.label);
+      mcpOutput.appendLine(`[${new Date().toISOString()}] Connected to "${selected.label}"; discovered ${tools.length} tool(s).`);
       void vscode.window.showInformationMessage(`Connected to MCP server "${selected.label}" and discovered ${tools.length} tool(s).`);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Could not connect to MCP server "${selected.label}": ${error instanceof Error ? error.message : "unknown error"}`);
+      const message = safeErrorMessage(error, configured[selected.label]);
+      mcpManager!.recordConnectionError(selected.label, message);
+      mcpOutput.appendLine(`[${new Date().toISOString()}] Connection failed for "${selected.label}": ${message}`);
+      void vscode.window.showErrorMessage(`Could not connect to MCP server "${selected.label}": ${message}`);
     }
+  });
+
+  const showMcpStatus = vscode.commands.registerCommand("aiChatbox.showMcpServerStatus", async () => {
+    const configured = configuredServers();
+    const names = Object.keys(configured).sort();
+    if (!names.length) {
+      void vscode.window.showInformationMessage("No MCP servers configured. Add entries to aiChatbox.mcpServers in VS Code Settings.");
+      return;
+    }
+    const connected = new Set(mcpManager!.getConnectedNames());
+    const toolCounts = new Map(mcpManager!.getToolSummaries().map((summary) => [summary.serverName, summary.tools.length]));
+    mcpOutput.appendLine(`[${new Date().toISOString()}] MCP status requested; ${connected.size} server(s) connected.`);
+    const items = names.map((name) => {
+      try {
+        const config = parseMcpServerConfig(configured[name]);
+        const isConnected = connected.has(name);
+        const lastError = mcpManager!.getConnectionError(name);
+        const endpoint = describeMcpServerEndpoint(config);
+        return {
+          label: `${isConnected ? "Connected" : "Disconnected"} — ${name}`,
+          description: `${config.transport} · ${toolCounts.get(name) ?? 0} discovered tool(s)`,
+          detail: lastError ? `Last connection error: ${lastError}` : endpoint
+        };
+      } catch (error) {
+        return {
+          label: `Invalid configuration — ${name}`,
+          description: "Configuration validation failed",
+          detail: safeErrorMessage(error, configured[name])
+        };
+      }
+    });
+    const selected = await vscode.window.showQuickPick(items, {
+      title: "MCP Server Status",
+      placeHolder: "Connections exist only in this VS Code session; servers are never started automatically."
+    });
+    if (selected) {
+      mcpOutput.appendLine(`[${new Date().toISOString()}] Selected status entry: ${selected.label}.`);
+      mcpOutput.show(true);
+    }
+  });
+
+  const showMcpOutput = vscode.commands.registerCommand("aiChatbox.showMcpDiagnostics", () => {
+    mcpOutput.appendLine(`[${new Date().toISOString()}] Diagnostics output opened.`);
+    mcpOutput.show(true);
   });
 
   const disconnectMcpServer = vscode.commands.registerCommand("aiChatbox.disconnectMcpServer", async () => {
@@ -99,6 +163,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!selected) return;
     try {
       await mcpManager!.disconnect(selected);
+      mcpOutput.appendLine(`[${new Date().toISOString()}] Disconnected MCP server "${selected}".`);
       void vscode.window.showInformationMessage(`Disconnected MCP server "${selected}".`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not disconnect "${selected}": ${error instanceof Error ? error.message : "unknown error"}`);
@@ -145,7 +210,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     openChat, setOpenAiApiKey, clearOpenAiApiKey,
-    connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken
+    connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
+    showMcpStatus, showMcpOutput
   );
 }
 
