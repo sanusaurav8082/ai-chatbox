@@ -58,7 +58,7 @@ function validateRun(value: unknown): WorkflowRun | undefined {
   for (let index = 0; index < stepIndex; index++) {
     const step = workflow.steps[index];
     const outcome = outcomes[index];
-    if (outcome?.stepId !== step?.id || outcome?.outcome === "denied") return undefined;
+    if (outcome?.stepId !== step?.id || (outcome?.outcome === "denied" && !(step?.type === "approval" && step.onDeny === "continue"))) return undefined;
     if (step.condition) {
       const sourceOutcome = outcomes.find((item) => item.stepId === step.condition!.stepId)?.outcome;
       const shouldRun = sourceOutcome === step.condition.outcome;
