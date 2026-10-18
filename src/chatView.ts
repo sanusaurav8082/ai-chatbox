@@ -29,7 +29,7 @@ type ModelUiMessage =
   | { type: "assistantDone" }
   | { type: "assistantError"; text: string }
   | { type: "toolEvent"; event: string; toolCallId: string; name: string; input?: unknown; output?: string }
-  | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown };
+  | { type: "toolApprovalRequest"; toolCallId: string; name: string; input: unknown }
   | { type: "workflowProgress"; runId: string; workflowName: string; version: string; stepIndex: number; stepCount: number; status: string; stepTitle?: string; detail?: string };
 
 const MAX_PROMPT_LENGTH = 20_000;
