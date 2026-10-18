@@ -45,6 +45,7 @@ export function validateSavedWorkflowRecords(value: unknown): Array<{ runId: str
 function validateRun(value: unknown): WorkflowRun | undefined {
   if (!isRecord(value) || !isRecord(value.workflow)) return undefined;
   const manifest = parseWorkflowManifest(value.workflow);
+  if (manifest.enabled === false) return undefined;
   const workflow = { ...manifest, enabled: true };
   if (!Number.isInteger(value.stepIndex) || (value.stepIndex as number) < 0 || (value.stepIndex as number) > workflow.steps.length) return undefined;
   if (typeof value.status !== "string" || !STATUSES.has(value.status)) return undefined;
@@ -67,13 +68,17 @@ function validateRun(value: unknown): WorkflowRun | undefined {
 
   const stepIndex = value.stepIndex as number;
   const status = value.status as WorkflowRun["status"];
+  const expectedOutcomeCount = stepIndex + (value.status === "cancelled" ? 1 : 0);
+  if (outcomes.length !== expectedOutcomeCount) return undefined;
+  for (let index = 0; index < stepIndex; index++) {
+    if (outcomes[index]?.stepId !== workflow.steps[index]?.id || outcomes[index]?.outcome === "denied") return undefined;
+  }
   if (status === "completed" && stepIndex !== workflow.steps.length) return undefined;
   if ((status === "running" || status === "awaiting-approval") && stepIndex >= workflow.steps.length) return undefined;
   if (status === "running" && workflow.steps[stepIndex]?.type !== "instruction") return undefined;
   if (status === "awaiting-approval" && workflow.steps[stepIndex]?.type !== "approval") return undefined;
   if (status === "cancelled" && (stepIndex >= workflow.steps.length || workflow.steps[stepIndex]?.type !== "approval" ||
       outcomes.at(-1)?.stepId !== workflow.steps[stepIndex]?.id || outcomes.at(-1)?.outcome !== "denied")) return undefined;
-  if (outcomes.length !== stepIndex + (status === "cancelled" ? 1 : 0)) return undefined;
 
   return {
     workflow: { ...workflow, steps: workflow.steps.map((step) => ({ ...step })) },
