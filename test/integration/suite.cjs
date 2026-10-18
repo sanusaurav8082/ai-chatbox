@@ -187,6 +187,18 @@ async function withMockMcpServer(callback) {
   const { z } = require("zod");
   const mcpServer = new McpServer({ name: "ai-chatbox-integration-fixture", version: "1.0.0" });
   let toolCallCount = 0;
+  mcpServer.resource(
+    "release-notes",
+    "file:///release-notes.md",
+    { description: "Fixture release notes", mimeType: "text/markdown" },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: "Fixture release notes: safe deterministic content." }] })
+  );
+  mcpServer.prompt(
+    "summarize_topic",
+    "Create a short summary prompt for a topic.",
+    { topic: z.string() },
+    async ({ topic }) => ({ messages: [{ role: "user", content: { type: "text", text: `Summarize this topic: ${topic}` } }] })
+  );
   mcpServer.tool(
     "fixture_echo",
     "Echo text for deterministic integration testing.",
@@ -233,6 +245,20 @@ async function testMcpAgentToolApproval(decision) {
     assert.equal(discovered[0].name, "fixture_echo");
     assert.equal(discovered[0].inputSchema.type, "object");
     assert.ok(discovered[0].inputSchema.properties.text);
+
+    const resources = await manager.listResources("fixture");
+    assert.equal(resources.length, 1);
+    assert.equal(resources[0].name, "release-notes");
+    const resourceContents = await manager.readResource("fixture", resources[0].uri);
+    assert.match(resourceContents[0].text, /safe deterministic content/);
+
+    const prompts = await manager.listPrompts("fixture");
+    assert.equal(prompts.length, 1);
+    assert.equal(prompts[0].name, "summarize_topic");
+    assert.equal(prompts[0].arguments[0].name, "topic");
+    const promptMessages = await manager.getPrompt("fixture", "summarize_topic", { topic: "MCP resources" });
+    assert.equal(promptMessages.length, 1);
+    assert.match(promptMessages[0].text, /MCP resources/);
 
     await withMockModelServer(async (body, response) => {
       requestCount += 1;
