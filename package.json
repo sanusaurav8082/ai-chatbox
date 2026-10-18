@@ -179,6 +179,11 @@
           "default": false,
           "description": "Persist bounded conversation history in workspace state. Disabled by default because prompts and model responses may contain sensitive information."
         },
+        "aiChatbox.knowledgeEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to retrieving relevant Markdown/text files from .ai-chatbox/knowledge and the AI Chatbox user storage knowledge directory. Retrieved content is sent to the configured model as untrusted context."
+        },
         "aiChatbox.workflowsEnabled": {
           "type": "boolean",
           "default": false,

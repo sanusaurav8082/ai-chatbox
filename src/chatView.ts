@@ -12,6 +12,7 @@ import { ModelConfig, ModelProvider } from "./modelClient";
 import { McpManager } from "./mcpManager";
 import { MAX_HISTORY_MESSAGES, toTranscriptMessages, validateStoredConversation } from "./conversationStore";
 import { formatSkillContext, loadSkillFiles, MAX_SKILL_FILES, MAX_SKILL_FILE_BYTES } from "./skillLoader";
+import { buildKnowledgeIndex, formatKnowledgeContext, searchKnowledge, MAX_KNOWLEDGE_FILES, MAX_KNOWLEDGE_FILE_BYTES } from "./knowledgeIndex";
 
 export const OPENAI_API_KEY_SECRET = "aiChatbox.openaiApiKey";
 
@@ -203,14 +204,18 @@ export class ChatView {
         maxIterations: 8,
         maxHistoryMessages: MAX_HISTORY_MESSAGES
       });
-      const skillContext = await ChatView.getSkillContext(context, text);
-      // Reserve one history slot for request-scoped skill context so AgentRuntime's
-      // bounded history cannot trim the system message before the model sees it.
-      const conversationForRequest = skillContext
+      const [skillContext, knowledgeContext] = await Promise.all([
+        ChatView.getSkillContext(context, text),
+        ChatView.getKnowledgeContext(context, text)
+      ]);
+      const requestContext = [skillContext, knowledgeContext].filter(Boolean).join("\n\n");
+      // Reserve one history slot for request-scoped context so bounded history cannot
+      // trim retrieved reference material before the model sees it.
+      const conversationForRequest = requestContext
         ? ChatView.conversation.slice(-(MAX_HISTORY_MESSAGES - 1))
         : ChatView.conversation.slice(-MAX_HISTORY_MESSAGES);
       const requestMessages: AgentMessage[] = [
-        ...(skillContext ? [{ role: "system" as const, content: skillContext }] : []),
+        ...(requestContext ? [{ role: "system" as const, content: requestContext }] : []),
         ...conversationForRequest
       ];
       const result = await runtime.run({
@@ -323,6 +328,61 @@ export class ChatView {
     const loaded = loadSkillFiles(files);
     const selected = loaded.registry.select(task);
     return formatSkillContext(selected);
+  }
+
+  private static async getKnowledgeContext(context: vscode.ExtensionContext, task: string): Promise<string> {
+    const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("knowledgeEnabled", false);
+    if (!enabled) return "";
+
+    const files: Array<{ path: string; content: string }> = [];
+    const readKnowledgeFile = async (uri: vscode.Uri, displayPath: string): Promise<void> => {
+      if (files.length >= MAX_KNOWLEDGE_FILES) return;
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.size > MAX_KNOWLEDGE_FILE_BYTES) {
+          files.push({ path: displayPath, content: "x".repeat(MAX_KNOWLEDGE_FILE_BYTES + 1) });
+          return;
+        }
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        files.push({ path: displayPath, content: new TextDecoder().decode(bytes) });
+      } catch {
+        // A knowledge file may disappear or become unreadable during discovery.
+      }
+    };
+
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      if (files.length >= MAX_KNOWLEDGE_FILES) break;
+      try {
+        const matches = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(folder, ".ai-chatbox/knowledge/*.{md,markdown,txt}"),
+          "**/{node_modules,.git}/**",
+          MAX_KNOWLEDGE_FILES - files.length
+        );
+        for (const uri of matches) {
+          if (files.length >= MAX_KNOWLEDGE_FILES) break;
+          await readKnowledgeFile(uri, vscode.workspace.asRelativePath(uri, false));
+        }
+      } catch {
+        // Workspace knowledge is optional; discovery failure should not block chat.
+      }
+    }
+
+    if (files.length < MAX_KNOWLEDGE_FILES) {
+      const userKnowledgeUri = vscode.Uri.joinPath(context.globalStorageUri, "knowledge");
+      try {
+        const entries = await vscode.workspace.fs.readDirectory(userKnowledgeUri);
+        for (const [name, type] of entries) {
+          if (files.length >= MAX_KNOWLEDGE_FILES) break;
+          if (type !== vscode.FileType.File || !/\.(md|markdown|txt)$/i.test(name)) continue;
+          await readKnowledgeFile(vscode.Uri.joinPath(userKnowledgeUri, name), "user/knowledge/" + name);
+        }
+      } catch {
+        // The user knowledge directory is optional and may not exist.
+      }
+    }
+
+    const indexed = buildKnowledgeIndex(files);
+    return formatKnowledgeContext(searchKnowledge(indexed.chunks, task));
   }
 
   private static async saveConversation(context: vscode.ExtensionContext): Promise<void> {

@@ -55,7 +55,7 @@ The chat client uses streaming Chat Completions (`stream: true`) for text-only c
 4. Distinguish MCP server discovery from connection and tool authorization.
 5. Never execute a tool just because a model requested it. The runtime asks the host-side permission service before every execution; the default permission service denies all tools.
 6. Bound model iterations, tool duration, output size, request duration, and concurrent work; support cancellation.
-7. Treat tool output, skill instructions, and retrieved documents as untrusted data, not instructions that override system policy.
+7. Treat tool output, skill instructions, and retrieved documents as untrusted data, not instructions that override system policy. Retrieved knowledge is bounded and request-scoped; source paths are included so the model can cite where information came from.
 8. Model text is rendered with `textContent`; it is not interpreted as HTML.
 
 ## MCP support
@@ -70,7 +70,7 @@ The current implementation supports stdio and Streamable HTTP with static bearer
 
 - **Skills:** versioned JSON manifests with instructions and keywords; discovery is opt-in, instructions are plain text, and scripts/resources are not executed.
 - **Workflows/SOPs:** versioned JSON manifests loaded only when `aiChatbox.workflowsEnabled` is enabled. The extension host reads bounded files from workspace and user-storage workflow directories and exposes a native VS Code command to step through instructions and approval checkpoints. The runner displays instructions rather than executing them; progress is posted to the chat webview by the extension host. Up to 10 validated run snapshots (200 KB total) are persisted in extension global state and can be resumed from the saved workflow version and step index. Every future tool action must still pass the independent per-invocation approval gate.
-- **Knowledge:** local files, SQLite full-text search, and eventually optional embedding/vector retrieval.
+- **Knowledge:** the opt-in MVP reads bounded Markdown/text files from `.ai-chatbox/knowledge/` and user extension storage, builds a deterministic in-memory lexical index per request, and adds only a few matching excerpts as request-scoped untrusted context. The initial implementation does not persist an index, call an embedding service, or execute content.
 
 ## Workflow runtime contract
 
