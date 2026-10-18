@@ -125,9 +125,9 @@ async function testStreamingModelClient() {
   const deltas = [];
   await withMockModelServer(async (_body, response) => {
     response.writeHead(200, { "content-type": "text/event-stream" });
-    response.write('data: {"choices":[{"delta":{"content":"hello "}}]}\\n\\n');
-    response.write('data: {"choices":[{"delta":{"content":"stream"}}]}\\n\\n');
-    response.end("data: [DONE]\\n\\n");
+    response.write('data: {"choices":[{"delta":{"content":"hello "}}]}\n\n');
+    response.write('data: {"choices":[{"delta":{"content":"stream"}}]}\n\n');
+    response.end("data: [DONE]\n\n");
   }, async (baseUrl) => {
     await streamChatCompletion({
       config: {
@@ -179,7 +179,8 @@ async function testAgentCancellation() {
     assert.equal(result.reason, "cancelled");
   });
 }
-\nasync function run() {
+
+async function run() {
   const extensionId = "sanusaurav8082.ai-chatbox";
   const extension = vscode.extensions.getExtension(extensionId);
 
