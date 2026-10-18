@@ -2,7 +2,7 @@
   "name": "ai-chatbox",
   "displayName": "AI Chatbox",
   "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "sanusaurav8082",
   "license": "MIT",
   "engines": {
@@ -14,18 +14,9 @@
   "activationEvents": ["onCommand:aiChatbox.open", "onCommand:aiChatbox.setOpenAiApiKey", "onCommand:aiChatbox.clearOpenAiApiKey"],
   "contributes": {
     "commands": [
-      {
-        "command": "aiChatbox.open",
-        "title": "AI Chatbox: Open Chat"
-      },
-      {
-        "command": "aiChatbox.setOpenAiApiKey",
-        "title": "AI Chatbox: Set OpenAI API Key"
-      },
-      {
-        "command": "aiChatbox.clearOpenAiApiKey",
-        "title": "AI Chatbox: Clear OpenAI API Key"
-      }
+      { "command": "aiChatbox.open", "title": "AI Chatbox: Open Chat" },
+      { "command": "aiChatbox.setOpenAiApiKey", "title": "AI Chatbox: Set OpenAI API Key" },
+      { "command": "aiChatbox.clearOpenAiApiKey", "title": "AI Chatbox: Clear OpenAI API Key" }
     ],
     "configuration": {
       "title": "AI Chatbox",
