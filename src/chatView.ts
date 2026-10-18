@@ -356,7 +356,7 @@ button:focus-visible, textarea:focus-visible { outline:1px solid var(--vscode-fo
   </div>
   <div class="sub">Agent chat · Tool execution requires explicit approval</div>
 </header>
-<section id="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Conversation"></section>
+<section id="messages" role="region" aria-live="off" aria-label="Conversation"></section>
 <div id="announcer" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="hint" id="composer-hint">Configure model settings and aiChatbox.mcpServers. Connect MCP servers through the Command Palette; each tool call still requires approval.</div>
 <form id="composer" aria-label="Send a message">
