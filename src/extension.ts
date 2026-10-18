@@ -479,8 +479,17 @@ async function resumeWorkflowRun(context: vscode.ExtensionContext, output: vscod
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  mcpManager = new McpManager(async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
   const mcpOutput = vscode.window.createOutputChannel("AI Chatbox MCP");
+  mcpManager = new McpManager(
+    async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName),
+    (notification) => {
+      const detail = notification.uri ? ` — ${notification.uri}` : "";
+      mcpOutput.appendLine(`[${notification.receivedAt}] MCP notification from "${notification.serverName}": ${notification.kind}${detail}`);
+      if (notification.kind === "tools-changed") {
+        mcpOutput.appendLine("Tool list changed. Disconnect and reconnect this server to refresh its discovered tool schemas.");
+      }
+    }
+  );
   const workflowOutput = vscode.window.createOutputChannel("AI Chatbox Workflows");
   const mcpContentOutput = vscode.window.createOutputChannel("AI Chatbox MCP Content");
   context.subscriptions.push(mcpOutput, workflowOutput, mcpContentOutput);
@@ -631,6 +640,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const showMcpOutput = vscode.commands.registerCommand("aiChatbox.showMcpDiagnostics", () => {
     mcpOutput.appendLine(`[${new Date().toISOString()}] Diagnostics output opened.`);
+    const recent = mcpManager!.getRecentNotifications();
+    mcpOutput.appendLine(`Recent MCP notifications retained: ${recent.length} (maximum 100).`);
+    for (const notification of recent.slice(-20)) {
+      mcpOutput.appendLine(`[${notification.receivedAt}] ${notification.serverName}: ${notification.kind}${notification.uri ? ` — ${notification.uri}` : ""}`);
+    }
     mcpOutput.show(true);
   });
 

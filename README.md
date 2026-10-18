@@ -19,6 +19,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - MCP tool discovery, JSON Schema validation, and per-call approval through the same agent runtime
 - Browse and preview MCP resources and prompt messages locally; content is bounded and is not automatically sent to the model
 - Explicitly attach a reviewed MCP resource or prompt to the next chat message after a confirmation step; attached content is bounded, labeled untrusted, and not saved as conversation history
+- Surface MCP resource, prompt, and tool change notifications in diagnostics without automatically reading resource content or sending it to the model
 - HTTPS enforcement for remote MCP endpoints; localhost HTTP is allowed for development
 - MCP bearer tokens stored in VS Code SecretStorage, not settings
 - OpenAI API support with credentials stored in VS Code SecretStorage
