@@ -40,6 +40,7 @@ function jsonResponse(response, payload, status = 200) {
 
 async function testAgentProviderToolApproval(decision) {
   let requestCount = 0;
+  let executionCount = 0;
   const serverRequests = [];
 
   await withMockModelServer(async (body, response) => {
@@ -220,7 +221,6 @@ async function withMockMcpServer(callback) {
 async function testMcpAgentToolApproval(decision) {
   const { McpManager } = require("../../dist/mcpManager.js");
   let requestCount = 0;
-  let executionCount = 0;
   const serverRequests = [];
   const manager = new McpManager(async () => undefined);
 
