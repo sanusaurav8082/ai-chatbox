@@ -11,6 +11,7 @@ import { createAgentModelAdapter } from "./agentModelAdapter";
 import { ModelConfig, ModelProvider } from "./modelClient";
 import { McpManager } from "./mcpManager";
 import { MAX_HISTORY_MESSAGES, toTranscriptMessages, validateStoredConversation } from "./conversationStore";
+import { formatSkillContext, loadSkillFiles, MAX_SKILL_FILES, MAX_SKILL_FILE_BYTES } from "./skillLoader";
 
 export const OPENAI_API_KEY_SECRET = "aiChatbox.openaiApiKey";
 
@@ -193,8 +194,13 @@ export class ChatView {
         maxIterations: 8,
         maxHistoryMessages: MAX_HISTORY_MESSAGES
       });
+      const skillContext = await ChatView.getSkillContext(context, text);
+      const requestMessages: AgentMessage[] = [
+        ...(skillContext ? [{ role: "system" as const, content: skillContext }] : []),
+        ...ChatView.conversation
+      ];
       const result = await runtime.run({
-        messages: ChatView.conversation,
+        messages: requestMessages,
         signal: controller.signal,
         onEvent: (event) => {
           if (event.type === "assistantDelta") {
@@ -225,7 +231,8 @@ export class ChatView {
         }
       });
       if (conversationEpoch !== ChatView.conversationEpoch) return;
-      ChatView.conversation = result.messages.slice(-MAX_HISTORY_MESSAGES);
+      // Skill context is request-scoped and must not be persisted as conversation history.
+      ChatView.conversation = result.messages.filter((message) => message.role !== "system").slice(-MAX_HISTORY_MESSAGES);
       await ChatView.saveConversation(context);
       if (!result.finalText && result.reason !== "cancelled") {
         await panel.webview.postMessage({
@@ -245,6 +252,63 @@ export class ChatView {
       await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
       if (ChatView.activeRequest === controller) ChatView.activeRequest = undefined;
     }
+  }
+
+  private static async getSkillContext(context: vscode.ExtensionContext, task: string): Promise<string> {
+    const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("skillsEnabled", false);
+    if (!enabled) return "";
+
+    const files: Array<{ path: string; content: string }> = [];
+    const readSkillFile = async (uri: vscode.Uri, displayPath: string): Promise<void> => {
+      if (files.length >= MAX_SKILL_FILES) return;
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.size > MAX_SKILL_FILE_BYTES) {
+          files.push({ path: displayPath, content: " ".repeat(MAX_SKILL_FILE_BYTES + 1) });
+          return;
+        }
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        files.push({ path: displayPath, content: new TextDecoder().decode(bytes) });
+      } catch {
+        // A file may disappear or become unreadable while discovery is running.
+      }
+    };
+
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      if (files.length >= MAX_SKILL_FILES) break;
+      try {
+        const matches = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(folder, ".ai-chatbox/skills/*.json"),
+          "**/{node_modules,.git}/**",
+          MAX_SKILL_FILES - files.length
+        );
+        for (const uri of matches) {
+          if (files.length >= MAX_SKILL_FILES) break;
+          await readSkillFile(uri, vscode.workspace.asRelativePath(uri, false));
+        }
+      } catch {
+        // Workspace skill discovery is best-effort; invalid/missing folders do not block chat.
+      }
+    }
+
+    // User-level skills live in extension global storage and are not shared with a workspace.
+    if (files.length < MAX_SKILL_FILES) {
+      const userSkillsUri = vscode.Uri.joinPath(context.globalStorageUri, "skills");
+      try {
+        const entries = await vscode.workspace.fs.readDirectory(userSkillsUri);
+        for (const [name, type] of entries) {
+          if (files.length >= MAX_SKILL_FILES) break;
+          if (type !== vscode.FileType.File || !name.toLowerCase().endsWith(".json")) continue;
+          await readSkillFile(vscode.Uri.joinPath(userSkillsUri, name), "user/" + name);
+        }
+      } catch {
+        // The user skills directory is optional and may not exist yet.
+      }
+    }
+
+    const loaded = loadSkillFiles(files);
+    const selected = loaded.registry.select(task);
+    return formatSkillContext(selected);
   }
 
   private static async saveConversation(context: vscode.ExtensionContext): Promise<void> {
