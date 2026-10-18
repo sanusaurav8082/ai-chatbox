@@ -40,7 +40,6 @@ function jsonResponse(response, payload, status = 200) {
 
 async function testAgentProviderToolApproval(decision) {
   let requestCount = 0;
-  let executionCount = 0;
   const serverRequests = [];
 
   await withMockModelServer(async (body, response) => {
@@ -196,7 +195,7 @@ async function withMockMcpServer(callback) {
       return { content: [{ type: "text", text: `echo:${text}` }] };
     }
   );
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => require("node:crypto").randomUUID() });
   await mcpServer.connect(transport);
   const server = http.createServer((request, response) => {
     if (request.url?.startsWith("/mcp")) {
