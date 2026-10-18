@@ -56,8 +56,8 @@ The chat client uses streaming Chat Completions (`stream: true`) for text-only c
 5. Never execute a tool just because a model requested it. The runtime asks the host-side permission service before every execution; the default permission service denies all tools.
 6. Bound model iterations, tool duration, output size, request duration, and concurrent work; support cancellation.
 7. Treat tool output, skill instructions, and retrieved documents as untrusted data, not instructions that override system policy. Retrieved knowledge is bounded and request-scoped; source paths are included so the model can cite where information came from.
-9. Explicitly attached MCP resources/prompts are user-confirmed, bounded, one-request context. Their contents are still untrusted and never grant tool permissions.
-8. Model text is rendered with `textContent`; it is not interpreted as HTML.
+8. Explicitly attached MCP resources/prompts are user-confirmed, bounded, one-request context. Their contents are still untrusted and never grant tool permissions.
+9. Model text is rendered with `textContent`; it is not interpreted as HTML.
 
 ## MCP support
 
