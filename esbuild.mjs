@@ -3,7 +3,7 @@ import esbuild from "esbuild";
 const watch = process.argv.includes("--watch");
 
 const options = {
-  entryPoints: ["src/extension.ts", "src/modelClient.ts"],
+  entryPoints: ["src/extension.ts", "src/modelClient.ts", "src/agentRuntime.ts"],
   bundle: true,
   platform: "node",
   format: "cjs",

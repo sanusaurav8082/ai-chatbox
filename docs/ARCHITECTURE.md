@@ -9,7 +9,7 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 - **Webview UI:** renders the conversation and sends typed messages. It must not hold provider credentials, start processes, access the filesystem, or call model APIs directly.
 - **Extension host:** owns configuration, model/provider clients, agent runtime, MCP connections, permissions, and VS Code APIs.
 - **Model client:** currently sends OpenAI Chat Completions requests and parses server-sent event (SSE) deltas. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
-- **Agent runtime:** planned component that builds context, asks the model for a response, validates proposed tool calls, requests approval where required, executes permitted tools, and returns tool results to the model.
+- **Agent runtime:** implemented as a provider-independent loop. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events. It is not yet connected to provider-native tool calling or the chat UI.
 - **MCP manager:** planned component that owns configured server lifecycle and maps MCP tool schemas/results into the agent's internal tool format.
 - **Extension points:** skills, workflows/SOPs, and knowledge sources will be added behind explicit interfaces.
 
@@ -52,7 +52,7 @@ The current client uses the streaming Chat Completions format: requests set `str
 2. Use a strict Content Security Policy and restrict webview local resource roots.
 3. Store credentials using VS Code SecretStorage; never put secrets in workspace settings, source control, or webview state.
 4. Distinguish MCP server discovery from connection and tool authorization.
-5. Never execute a tool just because a model requested it. Apply policy and approval checks in our own host-side permission service.
+5. Never execute a tool just because a model requested it. The runtime asks the host-side permission service before every execution; the default permission service denies all tools.
 6. Bound model iterations, tool duration, output size, request duration, and concurrent work; support cancellation.
 7. Treat tool output and retrieved documents as untrusted data, not instructions that override system policy.
 8. Model text is rendered with `textContent`; it is not interpreted as HTML.
@@ -72,3 +72,9 @@ A discovered server is not automatically trusted. Starting a stdio server can ex
 - **Skills:** versioned metadata, instructions, and optional resources/scripts.
 - **Workflows/SOPs:** versioned step definitions with conditions, retries, and approval checkpoints.
 - **Knowledge:** local files, SQLite full-text search, and eventually optional embedding/vector retrieval.
+
+## Agent runtime contract
+
+The runtime is intentionally provider-independent. A model adapter returns either a final text turn or a set of proposed tool calls. Registered tools supply an input validator and an executor. The permission service must explicitly return `allow`; any other decision is treated as denial. Tool output is serialized and truncated before being returned to the model. The runtime also limits iterations, tool calls per turn, history length, and output size.
+
+The current implementation is a tested foundation, not yet a user-facing autonomous agent: the existing streaming provider client emits text only, and the chat panel does not yet present approval prompts. The next integration step is to add structured tool-call support to model adapters and expose permission events to the UI.
