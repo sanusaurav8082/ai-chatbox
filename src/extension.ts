@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { ChatView, OPENAI_API_KEY_SECRET } from "./chatView";
 import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
+import { loadWorkflowFiles, getRunnableWorkflows, MAX_WORKFLOW_FILE_BYTES, WorkflowFile } from "./workflowLoader";
+import { completeInstructionStep, decideWorkflowApproval, getCurrentWorkflowStep, startWorkflow } from "./workflowRuntime";
 
 export const MCP_TOKEN_SECRET_PREFIX = "aiChatbox.mcpToken.";
 let mcpManager: McpManager | undefined;
@@ -32,13 +34,148 @@ function safeErrorMessage(error: unknown, rawConfig?: unknown): string {
   return message.slice(0, 2_000);
 }
 
+
+async function collectWorkflowFiles(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<WorkflowFile[]> {
+  const files: Array<{ uri: vscode.Uri; path: string; sourceOrder: number }> = [];
+  const globalRoot = vscode.Uri.joinPath(context.globalStorageUri, "workflows");
+  try {
+    await vscode.workspace.fs.createDirectory(globalRoot);
+    const entries = await vscode.workspace.fs.readDirectory(globalRoot);
+    for (const [name, type] of entries) {
+      if (type === vscode.FileType.File && name.toLowerCase().endsWith(".json")) {
+        files.push({ uri: vscode.Uri.joinPath(globalRoot, name), path: `user/workflows/${name}`, sourceOrder: 0 });
+      }
+    }
+  } catch (error) {
+    output.appendLine(`Could not inspect user workflow directory: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    try {
+      const uris = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(folder, ".ai-chatbox/workflows/*.json"),
+        new vscode.RelativePattern(folder, "**/{node_modules,.git}/**"),
+        101
+      );
+      for (const uri of uris) {
+        files.push({ uri, path: vscode.workspace.asRelativePath(uri, false), sourceOrder: 1 });
+      }
+    } catch (error) {
+      output.appendLine(`Could not discover workflows in workspace "${folder.name}": ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+
+  // User workflows load first; a workspace manifest with the same stable ID takes precedence.
+  files.sort((a, b) => a.sourceOrder - b.sourceOrder || a.path.localeCompare(b.path));
+  const contents: WorkflowFile[] = [];
+  for (const item of files.slice(0, 101)) {
+    try {
+      const stat = await vscode.workspace.fs.stat(item.uri);
+      if (stat.size > MAX_WORKFLOW_FILE_BYTES) {
+        contents.push({ path: item.path, content: "x".repeat(MAX_WORKFLOW_FILE_BYTES + 1) });
+        continue;
+      }
+      const bytes = await vscode.workspace.fs.readFile(item.uri);
+      contents.push({ path: item.path, content: Buffer.from(bytes).toString("utf8") });
+    } catch (error) {
+      output.appendLine(`Could not read workflow "${item.path}": ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+  return contents;
+}
+
+async function runSelectedWorkflow(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
+  const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("workflowsEnabled", false);
+  if (!enabled) {
+    void vscode.window.showWarningMessage(
+      "Workflow loading is disabled. Set aiChatbox.workflowsEnabled to true to opt in, then run this command again."
+    );
+    return;
+  }
+
+  const files = await collectWorkflowFiles(context, output);
+  const loaded = loadWorkflowFiles(files);
+  for (const rejected of loaded.rejected) {
+    output.appendLine(`Skipped workflow file "${rejected.path}": ${rejected.reason}`);
+  }
+  const workflows = getRunnableWorkflows(loaded.registry.list());
+  if (!workflows.length) {
+    const detail = loaded.rejected.length ? ` ${loaded.rejected.length} file(s) were skipped; see AI Chatbox Workflows output for details.` : "";
+    void vscode.window.showInformationMessage(
+      `No enabled workflows found. Add JSON files to .ai-chatbox/workflows/ or the AI Chatbox user storage workflows/ directory.${detail}`
+    );
+    return;
+  }
+  if (loaded.rejected.length) {
+    output.appendLine(`Loaded ${loaded.loaded} workflow file(s); ${loaded.rejected.length} file(s) rejected.`);
+  }
+
+  const selected = await vscode.window.showQuickPick(workflows.map((workflow) => ({
+    label: workflow.name,
+    description: `${workflow.id} · v${workflow.version}`,
+    detail: workflow.description,
+    workflow
+  })), { title: "Run AI Chatbox Workflow", placeHolder: "Choose a reviewed workflow definition" });
+  if (!selected) return;
+
+  let run = startWorkflow(selected.workflow);
+  output.appendLine(`Started workflow "${run.workflow.id}" version ${run.workflow.version}.`);
+  while (run.status === "running" || run.status === "awaiting-approval") {
+    const step = getCurrentWorkflowStep(run);
+    if (!step) {
+      void vscode.window.showErrorMessage("Workflow runtime reached an invalid step state.");
+      return;
+    }
+    const stepLabel = `Step ${run.stepIndex + 1} of ${run.workflow.steps.length}: ${step.title}`;
+    if (step.type === "instruction") {
+      const decision = await vscode.window.showInformationMessage(
+        `${run.workflow.name}\n${stepLabel}`,
+        { modal: true, detail: `${step.instructions}\n\nWorkflow instructions are untrusted reference text. They do not authorize tool execution.` },
+        "Mark Complete",
+        "Cancel Workflow"
+      );
+      if (decision !== "Mark Complete") {
+        output.appendLine(`Workflow "${run.workflow.id}" stopped by user during step "${step.id}".`);
+        return;
+      }
+      run = completeInstructionStep(run, step.id);
+    } else {
+      const decision = await vscode.window.showWarningMessage(
+        `${run.workflow.name}\nApproval required: ${step.title}`,
+        { modal: true, detail: `${step.prompt}\n\nApproving this workflow checkpoint does not grant permission to run any tool. Tool calls still require their own approval.` },
+        "Approve and Continue",
+        "Deny Workflow"
+      );
+      if (decision === undefined) {
+        output.appendLine(`Workflow "${run.workflow.id}" dismissed at approval checkpoint "${step.id}".`);
+        return;
+      }
+      run = decideWorkflowApproval(run, step.id, decision === "Approve and Continue");
+      if (run.status === "cancelled") {
+        output.appendLine(`Workflow "${run.workflow.id}" denied at checkpoint "${step.id}".`);
+        void vscode.window.showInformationMessage(`Workflow "${run.workflow.name}" was cancelled because an approval checkpoint was denied.`);
+        return;
+      }
+    }
+  }
+  output.appendLine(`Workflow "${run.workflow.id}" version ${run.workflow.version} completed.`);
+  void vscode.window.showInformationMessage(`Workflow completed: ${run.workflow.name} (v${run.workflow.version}).`);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   mcpManager = new McpManager(async (serverName) => context.secrets.get(MCP_TOKEN_SECRET_PREFIX + serverName));
   const mcpOutput = vscode.window.createOutputChannel("AI Chatbox MCP");
-  context.subscriptions.push(mcpOutput);
+  const workflowOutput = vscode.window.createOutputChannel("AI Chatbox Workflows");
+  context.subscriptions.push(mcpOutput, workflowOutput);
 
   const openChat = vscode.commands.registerCommand("aiChatbox.open", () => {
     ChatView.open(context, mcpManager!);
+  });
+  const runWorkflow = vscode.commands.registerCommand("aiChatbox.runWorkflow", async () => {
+    await runSelectedWorkflow(context, workflowOutput);
+  });
+  const showWorkflowDiagnostics = vscode.commands.registerCommand("aiChatbox.showWorkflowDiagnostics", () => {
+    workflowOutput.show(true);
   });
   const clearConversation = vscode.commands.registerCommand("aiChatbox.clearConversation", async () => {
     await ChatView.clearConversation(context);
@@ -215,7 +352,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
     connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
-    showMcpStatus, showMcpOutput
+    showMcpStatus, showMcpOutput, runWorkflow, showWorkflowDiagnostics
   );
 }
 
