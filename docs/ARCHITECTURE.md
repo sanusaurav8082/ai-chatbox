@@ -11,7 +11,7 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 - **Model clients:** the chat client streams text over SSE; `agentModelAdapter` uses non-streaming OpenAI Chat Completions responses to preserve structured tool-call IDs and arguments. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
 - **Agent runtime:** connected to an OpenAI-compatible structured tool-call adapter and chat approval UI. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events.
 - **MCP manager:** owns explicitly approved stdio and Streamable HTTP connections, discovers tool schemas, validates arguments against JSON Schema, maps calls/results into the agent's internal tool format, and closes transports on disconnect/deactivation.
-- **Skill registry:** validates versioned skill metadata and selects a small set of enabled skills by deterministic keyword overlap. It is currently a pure library, not yet wired to chat or filesystem discovery.
+- **Skills:** when `aiChatbox.skillsEnabled` is explicitly enabled, the extension host loads bounded JSON manifests from workspace `.ai-chatbox/skills/` and user global storage, validates them through the skill registry, and adds up to five matching instructions to the current request. Skill context is labeled untrusted and never persisted as conversation history.
 
 ## Intended message flow
 
@@ -67,7 +67,7 @@ The current implementation supports stdio and Streamable HTTP with static bearer
 
 ## Future extension points
 
-- **Skills:** versioned metadata, instructions, and optional resources/scripts.
+- **Skills:** versioned JSON manifests with instructions and keywords; discovery is opt-in, instructions are plain text, and scripts/resources are not executed.
 - **Workflows/SOPs:** versioned step definitions with conditions, retries, and approval checkpoints.
 - **Knowledge:** local files, SQLite full-text search, and eventually optional embedding/vector retrieval.
 
