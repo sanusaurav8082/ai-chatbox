@@ -11,7 +11,7 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 - **Model clients:** the chat client streams text over SSE; `agentModelAdapter` uses non-streaming OpenAI Chat Completions responses to preserve structured tool-call IDs and arguments. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
 - **Agent runtime:** connected to an OpenAI-compatible structured tool-call adapter and chat approval UI. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events.
 - **MCP manager:** owns explicitly approved stdio and Streamable HTTP connections, discovers tool schemas, validates arguments against JSON Schema, maps calls/results into the agent's internal tool format, and closes transports on disconnect/deactivation.
-- **Extension points:** skills, workflows/SOPs, and knowledge sources will be added behind explicit interfaces.
+- **Skill registry:** validates versioned skill metadata and selects a small set of enabled skills by deterministic keyword overlap. It is currently a pure library, not yet wired to chat or filesystem discovery.
 
 ## Intended message flow
 
@@ -54,7 +54,7 @@ The chat client uses streaming Chat Completions (`stream: true`) for text-only c
 4. Distinguish MCP server discovery from connection and tool authorization.
 5. Never execute a tool just because a model requested it. The runtime asks the host-side permission service before every execution; the default permission service denies all tools.
 6. Bound model iterations, tool duration, output size, request duration, and concurrent work; support cancellation.
-7. Treat tool output and retrieved documents as untrusted data, not instructions that override system policy.
+7. Treat tool output, skill instructions, and retrieved documents as untrusted data, not instructions that override system policy.
 8. Model text is rendered with `textContent`; it is not interpreted as HTML.
 
 ## MCP support
