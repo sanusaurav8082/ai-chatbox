@@ -58,6 +58,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [ ] Manually install and exercise the packaged extension in VS Code.
 - [x] Add opt-in, bounded workspace-scoped conversation persistence (disabled by default).
 - [x] Add a command to clear the saved conversation.
+- [x] Validate persisted conversation structures and guard clear-history against in-flight request races.
 - [ ] Add richer settings/approval presentation.
 - [ ] Improve accessibility and error/approval presentation.
 
