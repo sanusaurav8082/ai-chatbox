@@ -129,11 +129,13 @@ test("skips conditional steps when their prerequisite outcome does not match", (
 test("skips mismatched conditions and completes when all remaining steps are skipped", () => {
   const workflow = { ...deployWorkflow, steps: [
     deployWorkflow.steps[0],
-    { id: "conditional", type: "instruction", title: "Conditional", instructions: "Only runs after approval.", condition: { stepId: "inspect", outcome: "approved" } }
+    { ...deployWorkflow.steps[1], onDeny: "continue" },
+    { id: "conditional", type: "instruction", title: "Conditional", instructions: "Only runs after approval.", condition: { stepId: "release-approval", outcome: "approved" } }
   ] };
   let run = startWorkflow(workflow);
   run = completeInstructionStep(run, "inspect");
+  run = decideWorkflowApproval(run, "release-approval", false);
   assert.equal(run.status, "completed");
-  assert.equal(run.stepIndex, 2);
-  assert.equal(run.outcomes[1].outcome, "skipped");
+  assert.equal(run.stepIndex, 3);
+  assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "denied", "skipped"]);
 });
