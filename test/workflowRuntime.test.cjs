@@ -1,18 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  WorkflowRegistry,
-  parseWorkflowManifest,
-  startWorkflow,
-  getCurrentWorkflowStep,
-  completeInstructionStep,
-  decideWorkflowApproval
+  WorkflowRegistry, parseWorkflowManifest, startWorkflow, getCurrentWorkflowStep,
+  completeInstructionStep, decideWorkflowApproval
 } = require("../dist/workflowRuntime.js");
 
 const deployWorkflow = {
-  id: "release.deploy",
-  version: "1.2.0",
-  name: "Release deployment",
+  id: "release.deploy", version: "1.2.0", name: "Release deployment",
   description: "A staged release checklist with explicit approval checkpoints.",
   steps: [
     { id: "inspect", type: "instruction", title: "Inspect changes", instructions: "Review the change summary, tests, and rollback plan." },
@@ -33,6 +27,26 @@ test("rejects invalid IDs, non-semver versions, duplicate steps, and unknown ste
   assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, version: "latest" }), /semantic version/i);
   assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [deployWorkflow.steps[0], deployWorkflow.steps[0]] }), /unique/i);
   assert.throws(() => parseWorkflowManifest({ ...deployWorkflow, steps: [{ id: "bad", type: "shell", title: "Run", command: "echo hi" }] }), /step type/i);
+});
+
+test("validates conditions only when they reference a compatible earlier step", () => {
+  const conditional = { ...deployWorkflow, steps: [
+    deployWorkflow.steps[0],
+    { ...deployWorkflow.steps[1], condition: { stepId: "inspect", outcome: "completed" } }
+  ] };
+  assert.equal(parseWorkflowManifest(conditional).steps[1].condition.stepId, "inspect");
+  assert.throws(() => parseWorkflowManifest({ ...conditional, steps: [
+    { ...deployWorkflow.steps[0], condition: { stepId: "release-approval", outcome: "approved" } },
+    deployWorkflow.steps[1]
+  ] }), /earlier step/i);
+  assert.throws(() => parseWorkflowManifest({ ...conditional, steps: [
+    deployWorkflow.steps[1],
+    { ...deployWorkflow.steps[0], condition: { stepId: "release-approval", outcome: "completed" } }
+  ] }), /earlier step/i);
+  assert.throws(() => parseWorkflowManifest({ ...conditional, steps: [
+    deployWorkflow.steps[0],
+    { ...deployWorkflow.steps[1], condition: { stepId: "inspect", outcome: "approved" } }
+  ] }), /does not match/i);
 });
 
 test("bounds workflow count, step count, and text size", () => {
@@ -58,16 +72,13 @@ test("workflow pauses at approval checkpoints and continues only after approval"
   let run = startWorkflow(deployWorkflow);
   assert.equal(run.status, "running");
   assert.equal(getCurrentWorkflowStep(run).id, "inspect");
-
   run = completeInstructionStep(run, "inspect");
   assert.equal(run.status, "awaiting-approval");
   assert.equal(getCurrentWorkflowStep(run).id, "release-approval");
   assert.throws(() => completeInstructionStep(run, "release-approval"), /current instruction/i);
-
   run = decideWorkflowApproval(run, "release-approval", true);
   assert.equal(run.status, "running");
   assert.equal(getCurrentWorkflowStep(run).id, "verify");
-
   run = completeInstructionStep(run, "verify");
   assert.equal(run.status, "completed");
   assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "approved", "completed"]);
@@ -96,4 +107,32 @@ test("workflow transitions are immutable and require the exact current step", ()
   assert.equal(original.stepIndex, 0);
   assert.equal(original.outcomes.length, 0);
   assert.equal(advanced.stepIndex, 1);
+});
+
+test("skips conditional steps when their prerequisite outcome does not match", () => {
+  const workflow = { ...deployWorkflow, steps: [
+    deployWorkflow.steps[0],
+    deployWorkflow.steps[1],
+    { id: "post-approval", type: "instruction", title: "Post approval", instructions: "Continue only after approval.", condition: { stepId: "release-approval", outcome: "approved" } },
+    { id: "fallback", type: "instruction", title: "Fallback", instructions: "Record that release approval was denied.", condition: { stepId: "release-approval", outcome: "approved" } }
+  ] };
+  let run = startWorkflow(workflow);
+  run = completeInstructionStep(run, "inspect");
+  run = decideWorkflowApproval(run, "release-approval", true);
+  assert.equal(getCurrentWorkflowStep(run).id, "post-approval");
+  run = completeInstructionStep(run, "post-approval");
+  assert.equal(run.status, "completed");
+  assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "approved", "completed", "skipped"]);
+});
+
+test("skips mismatched conditions and completes when all remaining steps are skipped", () => {
+  const workflow = { ...deployWorkflow, steps: [
+    deployWorkflow.steps[0],
+    { id: "conditional", type: "instruction", title: "Conditional", instructions: "Only runs after approval.", condition: { stepId: "inspect", outcome: "approved" } }
+  ] };
+  let run = startWorkflow(workflow);
+  run = completeInstructionStep(run, "inspect");
+  assert.equal(run.status, "completed");
+  assert.equal(run.stepIndex, 2);
+  assert.equal(run.outcomes[1].outcome, "skipped");
 });
