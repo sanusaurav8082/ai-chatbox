@@ -8,8 +8,8 @@ AI Chatbox is a learning-first AI chat and coding agent distributed as a VS Code
 
 - **Webview UI:** renders the conversation and sends typed messages. It must not hold provider credentials, start processes, access the filesystem, or call model APIs directly.
 - **Extension host:** owns configuration, model/provider clients, agent runtime, MCP connections, permissions, and VS Code APIs.
-- **Model client:** currently sends OpenAI Chat Completions requests and parses server-sent event (SSE) deltas. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
-- **Agent runtime:** implemented as a provider-independent loop. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events. It is not yet connected to provider-native tool calling or the chat UI.
+- **Model clients:** the chat client streams text over SSE; `agentModelAdapter` uses non-streaming OpenAI Chat Completions responses to preserve structured tool-call IDs and arguments. The OpenAI provider uses the official API endpoint; the compatible provider uses a configured HTTP(S) base URL.
+- **Agent runtime:** connected to an OpenAI-compatible structured tool-call adapter and chat approval UI. It accepts an adapter contract, a tool registry, and a permission service; validates tool inputs; asks for a decision before execution; bounds iterations, tool calls per turn, history, and output; and emits typed lifecycle events.
 - **MCP manager:** planned component that owns configured server lifecycle and maps MCP tool schemas/results into the agent's internal tool format.
 - **Extension points:** skills, workflows/SOPs, and knowledge sources will be added behind explicit interfaces.
 
@@ -25,7 +25,7 @@ Extension host
   <-- typed streaming events
 Webview UI
 
-Future agent flow:
+Agent flow:
 Extension host --> AgentRuntime --> Model adapter
                            <-- text deltas / tool proposals
                            --> PermissionService --> Tool registry (built-in or MCP)
@@ -44,7 +44,7 @@ The webview receives text events only. It never receives the API key and never p
 - OpenAI credentials are managed through extension commands and VS Code `SecretStorage`, never ordinary settings or webview state.
 - The compatible provider omits Authorization unless an API key is added in a future milestone.
 
-The current client uses the streaming Chat Completions format: requests set `stream: true`, and the client emits string content from `choices[0].delta.content`. This intentionally supports a small, understandable contract rather than every provider-specific extension. Local server compatibility varies; configure the endpoint and model ID expected by the selected server.
+The chat client uses streaming Chat Completions (`stream: true`) for text-only chat. The agent adapter uses `stream: false` because the runtime needs complete structured tool-call IDs and JSON arguments before permission checks. Tool calling varies by local server and model; use a model/server that supports the OpenAI-compatible `tools` and `tool_calls` fields. The first built-in tool lists at most 100 relative workspace file paths and is read-only.
 
 ## Security principles
 
@@ -77,4 +77,4 @@ A discovered server is not automatically trusted. Starting a stdio server can ex
 
 The runtime is intentionally provider-independent. A model adapter returns either a final text turn or a set of proposed tool calls. Registered tools supply an input validator and an executor. The permission service must explicitly return `allow`; any other decision is treated as denial. Tool output is serialized and truncated before being returned to the model. The runtime also limits iterations, tool calls per turn, history length, and output size.
 
-The current implementation is a tested foundation, not yet a user-facing autonomous agent: the existing streaming provider client emits text only, and the chat panel does not yet present approval prompts. The next integration step is to add structured tool-call support to model adapters and expose permission events to the UI.
+The current implementation supports model-proposed tool calls and displays their arguments in the chat panel. Each tool call waits for an explicit approval decision; cancellation or a missing decision does not authorize execution. Tool outputs are shown as text. The current built-in tool is read-only and bounded; MCP and file-writing tools are not yet implemented.

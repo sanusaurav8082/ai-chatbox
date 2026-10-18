@@ -2,13 +2,16 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 3 — agent runtime foundation.** Model connectivity is implemented, and a testable agent loop now supports tool proposals, argument validation, permission decisions, bounded execution, and cancellation. The current chat UI is not yet wired to model-generated tool calls; MCP integration follows in a later phase.
+> **Current status: Phase 4 — agent tool-call integration.** OpenAI-compatible structured tool calls now connect to the agent runtime. The chat UI displays requested arguments and requires explicit per-call approval. The first built-in tool lists workspace file paths (read-only, maximum 100). MCP integration follows in a later phase.
 
 ## Current features
 
 - VS Code command: **AI Chatbox: Open Chat**
 - Theme-aware chat UI with Enter-to-send and Shift+Enter for a newline
-- Streaming model responses, Stop/cancel control, bounded conversation history, and readable errors
+- Streaming chat client support, agent Stop/cancel control, bounded conversation history, and readable errors
+- OpenAI-compatible structured tool calls routed through the agent runtime
+- Per-call approval UI showing tool arguments; denied tools are not executed
+- Read-only workspace file listing tool with a 100-path limit
 - OpenAI API support with credentials stored in VS Code SecretStorage
 - OpenAI-compatible local endpoint support (for example, Ollama or LM Studio when its OpenAI-compatible API is enabled)
 - Configurable provider, model ID, endpoint, and request timeout
@@ -85,11 +88,13 @@ The generated `.vsix` is a local build artifact and is intentionally excluded fr
 src/
   extension.ts      Extension activation and secure key commands
   chatView.ts       Webview panel, message bridge, streaming UI
-  modelClient.ts    OpenAI-compatible HTTP/SSE model client
+  modelClient.ts    OpenAI-compatible HTTP/SSE chat client
+  agentModelAdapter.ts  Structured Chat Completions tool-call adapter
   agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
 test/
   modelClient.test.cjs   Focused model client tests
   agentRuntime.test.cjs  Deterministic agent runtime tests
+  agentModelAdapter.test.cjs  Structured tool-call adapter tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
   ROADMAP.md        Incremental implementation plan
