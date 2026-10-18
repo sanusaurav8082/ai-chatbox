@@ -34,6 +34,8 @@
     "onCommand:aiChatbox.clearMcpServerToken",
     "onCommand:aiChatbox.showMcpServerStatus",
     "onCommand:aiChatbox.showMcpDiagnostics",
+    "onCommand:aiChatbox.browseMcpResources",
+    "onCommand:aiChatbox.browseMcpPrompts",
     "onCommand:aiChatbox.clearConversation",
     "onCommand:aiChatbox.runWorkflow",
     "onCommand:aiChatbox.resumeWorkflow",
@@ -76,6 +78,14 @@
       {
         "command": "aiChatbox.showMcpDiagnostics",
         "title": "AI Chatbox: Show MCP Diagnostics"
+      },
+      {
+        "command": "aiChatbox.browseMcpResources",
+        "title": "AI Chatbox: Browse MCP Resources"
+      },
+      {
+        "command": "aiChatbox.browseMcpPrompts",
+        "title": "AI Chatbox: Browse MCP Prompts"
       },
       {
         "command": "aiChatbox.clearConversation",
