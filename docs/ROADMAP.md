@@ -65,7 +65,8 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 
 ## Phase 6 — Extensibility
 
-- [x] Add a pure skill registry with versioned manifest validation, enable/disable controls, bounded metadata, and deterministic keyword-based context selection.\n- [ ] Load skills from a documented workspace/user location and expose selected instructions to the agent.
+- [x] Add a pure skill registry with versioned manifest validation, enable/disable controls, bounded metadata, and deterministic keyword-based context selection.
+- [x] Load skills from documented workspace/user locations only when explicitly enabled, and expose selected instructions to request-scoped agent context.
 - [ ] Add versioned workflows/SOPs and approval checkpoints.
 - [ ] Add knowledge sources, local indexing, and retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
