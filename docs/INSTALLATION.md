@@ -23,7 +23,7 @@ Alternatively, open VS Code → Extensions → **…** → **Install from VSIX�
 
 ## Automated Extension Development Host test
 
-The integration test launches a real VS Code Extension Development Host and verifies extension activation, core command registration, documented command contributions, opt-in privacy-sensitive settings defaults, and the Open Chat command entry point. It does not call a model API or connect to an MCP server.
+The integration test launches a real VS Code Extension Development Host and verifies extension activation, core command registration, documented command contributions, opt-in privacy-sensitive settings defaults, and the Open Chat command entry point. It also starts a loopback-only mock HTTP model server and exercises the real OpenAI-compatible adapter and agent loop through a structured tool proposal, checking both allow and deny outcomes. It does not call an external model API or connect to an MCP server.
 
 ```bash
 npm install
