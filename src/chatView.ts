@@ -195,9 +195,14 @@ export class ChatView {
         maxHistoryMessages: MAX_HISTORY_MESSAGES
       });
       const skillContext = await ChatView.getSkillContext(context, text);
+      // Reserve one history slot for request-scoped skill context so AgentRuntime's
+      // bounded history cannot trim the system message before the model sees it.
+      const conversationForRequest = skillContext
+        ? ChatView.conversation.slice(-(MAX_HISTORY_MESSAGES - 1))
+        : ChatView.conversation.slice(-MAX_HISTORY_MESSAGES);
       const requestMessages: AgentMessage[] = [
         ...(skillContext ? [{ role: "system" as const, content: skillContext }] : []),
-        ...ChatView.conversation
+        ...conversationForRequest
       ];
       const result = await runtime.run({
         messages: requestMessages,
