@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { startWorkflow, completeInstructionStep, decideWorkflowApproval } = require("../dist/workflowRuntime.js");
+const { startWorkflow, completeInstructionStep, decideWorkflowApproval, failInstructionStep, retryInstructionStep } = require("../dist/workflowRuntime.js");
 const { validateSavedWorkflowRecords, upsertSavedWorkflowRun, MAX_SAVED_WORKFLOW_RUNS } = require("../dist/workflowRunStore.js");
 
 const workflow = {
@@ -68,4 +68,28 @@ test("persists validated skipped outcomes for an explicit denial branch", () => 
   assert.equal(records.length, 1);
   assert.equal(records[0].run.status, "running");
   assert.equal(records[0].run.outcomes[2].outcome, "skipped");
+});
+
+test("persists and resumes a retry decision with its attempt count", () => {
+  const retryable = { ...workflow, steps: [{ ...workflow.steps[0], retryPolicy: { maxAttempts: 3 } }] };
+  let run = failInstructionStep(startWorkflow(retryable), "inspect");
+  let records = validateSavedWorkflowRecords([{ runId: "retry-1", run }]);
+  assert.equal(records[0].run.status, "awaiting-retry");
+  assert.equal(records[0].run.attempts.inspect, undefined);
+  run = retryInstructionStep(records[0].run, "inspect");
+  records = validateSavedWorkflowRecords(upsertSavedWorkflowRun([], "retry-1", run));
+  assert.equal(records[0].run.status, "running");
+  assert.equal(records[0].run.attempts.inspect, 2);
+  assert.equal(validateSavedWorkflowRecords([{ runId: "bad-count", run: { ...run, attempts: { inspect: 4 } } }]).length, 0);
+});
+
+test("validates an exhausted retry run as a cancelled instruction failure", () => {
+  const retryable = { ...workflow, steps: [{ ...workflow.steps[0], retryPolicy: { maxAttempts: 2 } }] };
+  let run = failInstructionStep(startWorkflow(retryable), "inspect");
+  run = retryInstructionStep(run, "inspect");
+  run = failInstructionStep(run, "inspect");
+  const records = validateSavedWorkflowRecords([{ runId: "retry-failed", run }]);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].run.status, "cancelled");
+  assert.equal(records[0].run.outcomes[0].outcome, "failed");
 });

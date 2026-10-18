@@ -116,7 +116,7 @@ Alternatively, open the VS Code Extensions view, select **… → Install from V
 
 ### Workflows and SOPs
 
-Workflow loading is disabled by default. Set `aiChatbox.workflowsEnabled` to `true`, then use **AI Chatbox: Run Workflow**. Workflow progress appears in the chat panel when it is open. If a dialog is dismissed, use **AI Chatbox: Resume Workflow** to continue from the saved workflow version and step. Up to 10 validated run snapshots are persisted in extension global state (bounded to 200 KB total). Workflow steps display instructions and approval checkpoints only; they do not execute arbitrary code or grant tool permissions. See [the workflow guide](docs/WORKFLOWS.md).
+Workflow loading is disabled by default. Set `aiChatbox.workflowsEnabled` to `true`, then use **AI Chatbox: Run Workflow**. Workflow progress appears in the chat panel when it is open. If a dialog is dismissed, use **AI Chatbox: Resume Workflow** to continue from the saved workflow version and step. Up to 10 validated run snapshots are persisted in extension global state (bounded to 200 KB total). Workflow steps display instructions and approval checkpoints only; they do not execute arbitrary code or grant tool permissions. Instruction steps can opt into a bounded manual retry policy (`maxAttempts` 1–3, including the first attempt); a failed instruction requires an explicit retry/cancel choice and does not automatically rerun tools or commands. See [the workflow guide](docs/WORKFLOWS.md).
 
 ### Skills
 

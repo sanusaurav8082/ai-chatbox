@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   WorkflowRegistry, parseWorkflowManifest, startWorkflow, getCurrentWorkflowStep,
-  completeInstructionStep, decideWorkflowApproval
+  completeInstructionStep, decideWorkflowApproval, failInstructionStep, retryInstructionStep, getWorkflowStepAttempt
 } = require("../dist/workflowRuntime.js");
 
 const deployWorkflow = {
@@ -138,4 +138,44 @@ test("skips mismatched conditions and completes when all remaining steps are ski
   assert.equal(run.status, "completed");
   assert.equal(run.stepIndex, 3);
   assert.deepEqual(run.outcomes.map(item => item.outcome), ["completed", "denied", "skipped"]);
+});
+
+test("validates total-attempt retry policies and rejects unbounded values", () => {
+  const retryable = { ...deployWorkflow, steps: [{ ...deployWorkflow.steps[0], retryPolicy: { maxAttempts: 3 } }] };
+  assert.equal(parseWorkflowManifest(retryable).steps[0].retryPolicy.maxAttempts, 3);
+  for (const maxAttempts of [0, 4, 1.5, "3"]) {
+    assert.throws(() => parseWorkflowManifest({ ...retryable, steps: [{ ...retryable.steps[0], retryPolicy: { maxAttempts } }] }), /integer from 1 to 3/i);
+  }
+});
+
+test("manual instruction retry increments attempts and completes within the budget", () => {
+  const workflow = { ...deployWorkflow, steps: [{ ...deployWorkflow.steps[0], retryPolicy: { maxAttempts: 2 } }] };
+  const original = startWorkflow(workflow);
+  const awaitingRetry = failInstructionStep(original, "inspect");
+  assert.equal(original.status, "running");
+  assert.equal(awaitingRetry.status, "awaiting-retry");
+  assert.equal(getWorkflowStepAttempt(awaitingRetry, "inspect"), 1);
+  const retried = retryInstructionStep(awaitingRetry, "inspect");
+  assert.equal(retried.status, "running");
+  assert.equal(getWorkflowStepAttempt(retried, "inspect"), 2);
+  assert.throws(() => retryInstructionStep(retried, "inspect"), /awaiting retry/i);
+  const completed = completeInstructionStep(retried, "inspect");
+  assert.equal(completed.status, "completed");
+});
+
+test("exhausting the retry budget cancels and records a terminal failed outcome", () => {
+  const workflow = { ...deployWorkflow, steps: [{ ...deployWorkflow.steps[0], retryPolicy: { maxAttempts: 2 } }] };
+  let run = failInstructionStep(startWorkflow(workflow), "inspect");
+  run = retryInstructionStep(run, "inspect");
+  run = failInstructionStep(run, "inspect");
+  assert.equal(run.status, "cancelled");
+  assert.equal(run.stepIndex, 0);
+  assert.deepEqual(run.outcomes.map(item => item.outcome), ["failed"]);
+  assert.throws(() => retryInstructionStep(run, "inspect"), /awaiting retry/i);
+});
+
+test("instruction steps without a retry policy get one attempt only", () => {
+  const run = failInstructionStep(startWorkflow({ ...deployWorkflow, steps: [deployWorkflow.steps[0]] }), "inspect");
+  assert.equal(run.status, "cancelled");
+  assert.equal(run.outcomes[0].outcome, "failed");
 });
