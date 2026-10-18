@@ -11,6 +11,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add a strict starter CSP and no local webview resource access.
 - [x] Add a CI workflow for type-checking, build, and tests.
 - [x] Add a CI integration test that launches the VS Code Extension Development Host and verifies activation, core command registration, and safe default settings.
+- [x] Exercise the OpenAI-compatible model adapter and agent loop against a local deterministic mock server, including approved and denied tool calls.
 - [ ] Verify interactively in the VS Code Extension Development Host.
 
 ## Phase 2 — Model connectivity (implementation in this PR)
@@ -57,6 +58,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Verify VSIX contents in CI and upload the package as a short-lived build artifact.
 - [x] Document VSIX installation and a manual smoke-test checklist.
 - [x] Add automated Extension Development Host coverage to CI (activation, command registration, and Open Chat entry point).
+- [x] Test structured tool calling through a local mock model server and verify that denied calls never execute.
 - [ ] Manually install and exercise the packaged extension in VS Code.
 - [x] Add opt-in, bounded workspace-scoped conversation persistence (disabled by default).
 - [x] Add a command to clear the saved conversation.
