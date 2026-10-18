@@ -76,10 +76,9 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Add opt-in local Markdown/text knowledge indexing and bounded lexical retrieval into request-scoped agent context.
 - [x] Improve lexical ranking by ignoring common stopwords and requiring exact token matches; add regression tests for natural-language queries and substring false positives.
 - [ ] Add richer source providers and optional semantic/vector retrieval.
-- [ ] Document extension interfaces and compatibility guarantees.
+- [x] Document current extension seams, security invariants, and compatibility expectations; explicitly state that there is not yet a stable third-party TypeScript plugin API.
 
 - [ ] Add richer source providers and optional semantic/vector retrieval.
-- [ ] Document extension interfaces and compatibility guarantees.
 
 ## Definition of done for a milestone
 

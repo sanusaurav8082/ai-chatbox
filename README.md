@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 16 — local knowledge retrieval.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 20 — extension interface contracts and compatibility policy.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -31,6 +31,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Versioned workflow/SOP definitions with bounded loading and explicit approval checkpoints
 - Live workflow progress cards in chat and validated run snapshots that can be resumed after restarting VS Code
 - Opt-in local Markdown/text knowledge retrieval with bounded lexical search and source-path context
+- Documented extension seams, security invariants, and compatibility expectations (there is not yet a stable third-party TypeScript plugin API)
 
 ## Prerequisites
 
@@ -161,7 +162,7 @@ package.json        VS Code manifest and developer scripts
 - Secrets use VS Code `SecretStorage`, not source control, webview state, or ordinary settings.
 - Keep each milestone buildable, tested, and documented.
 
-Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md) before starting the next phase.
+Read [the architecture](docs/ARCHITECTURE.md), [extension interfaces and compatibility policy](docs/EXTENSION-INTERFACES.md), and [the roadmap](docs/ROADMAP.md) before starting the next phase.
 
 ## Development scripts
 
@@ -177,7 +178,7 @@ Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md)
 
 1. Package and install a VSIX, plus improve connection/approval presentation
 2. Conversation persistence and richer settings/approval UX
-3. Local knowledge indexing and retrieval; workflow conditions and bounded retry policies
+3. Richer knowledge source providers and optional semantic/vector retrieval
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for acceptance criteria and status.
 
