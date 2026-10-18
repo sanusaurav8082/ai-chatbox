@@ -139,9 +139,10 @@ export class ChatView {
 
       const tools = [{
         name: "list_workspace_files",
-        description: "List relative file paths in the current VS Code workspace. Read-only; returns at most 100 paths.",
+        description: "List relative file paths in the current VS Code workspace. Read-only; returns at most 100 paths. Optional input property pattern is a VS Code glob, for example src/**/*.ts.",
         validateInput(input: unknown): string | undefined {
           if (!input || typeof input !== "object" || Array.isArray(input)) return "input must be an object";
+          if (Object.keys(input).some((key) => key !== "pattern")) return "only the optional pattern property is supported";
           const pattern = (input as { pattern?: unknown }).pattern;
           if (pattern !== undefined && (typeof pattern !== "string" || pattern.length > 200)) {
             return "pattern must be a string of at most 200 characters";
