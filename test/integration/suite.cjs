@@ -180,6 +180,133 @@ async function testAgentCancellation() {
   });
 }
 
+
+async function withMockMcpServer(callback) {
+  const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
+  const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
+  const { z } = require("zod");
+  const mcpServer = new McpServer({ name: "ai-chatbox-integration-fixture", version: "1.0.0" });
+  let toolCallCount = 0;
+  mcpServer.tool(
+    "fixture_echo",
+    "Echo text for deterministic integration testing.",
+    { text: z.string() },
+    async ({ text }) => {
+      toolCallCount += 1;
+      return { content: [{ type: "text", text: `echo:${text}` }] };
+    }
+  );
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  await mcpServer.connect(transport);
+  const server = http.createServer((request, response) => {
+    if (request.url?.startsWith("/mcp")) {
+      void transport.handleRequest(request, response);
+      return;
+    }
+    response.writeHead(404).end("not found");
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  try {
+    await callback(`http://127.0.0.1:${address.port}/mcp`, () => toolCallCount);
+  } finally {
+    await mcpServer.close().catch(() => undefined);
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function testMcpAgentToolApproval(decision) {
+  const { McpManager } = require("../../dist/mcpManager.js");
+  let requestCount = 0;
+  let executionCount = 0;
+  const serverRequests = [];
+  const manager = new McpManager(async () => undefined);
+
+  await withMockMcpServer(async (mcpUrl, getMcpToolCallCount) => {
+    const discovered = await manager.connect("fixture", {
+      transport: "streamable-http",
+      url: mcpUrl
+    });
+    assert.equal(discovered.length, 1);
+    assert.equal(discovered[0].name, "fixture_echo");
+    assert.equal(discovered[0].inputSchema.type, "object");
+    assert.ok(discovered[0].inputSchema.properties.text);
+
+    await withMockModelServer(async (body, response) => {
+      requestCount += 1;
+      serverRequests.push(body);
+      assert.equal(body.model, "integration-test-model");
+      assert.equal(body.stream, false);
+      if (requestCount === 1) {
+        assert.ok(Array.isArray(body.tools), "Expected MCP tool schema to be forwarded to the model.");
+        const tool = body.tools.find((item) => item.function?.name === "mcp_fixture_fixture_echo");
+        assert.ok(tool, "Expected normalized MCP tool name in model request.");
+        assert.ok(tool.function.parameters.properties.text, "Expected discovered input schema to reach the model.");
+        return jsonResponse(response, {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: "I will use the discovered MCP tool.",
+              tool_calls: [{
+                id: "mcp-integration-call-1",
+                type: "function",
+                function: {
+                  name: "mcp_fixture_fixture_echo",
+                  arguments: JSON.stringify({ text: "hello from MCP" })
+                }
+              }]
+            }
+          }]
+        });
+      }
+
+      assert.ok(body.messages.some((message) =>
+        message.role === "tool" && message.tool_call_id === "mcp-integration-call-1"
+      ), "Expected MCP tool result or denial to be returned to the model.");
+      return jsonResponse(response, {
+        choices: [{ message: { role: "assistant", content: "MCP tool turn completed." } }]
+      });
+    }, async (baseUrl) => {
+      const runtime = new AgentRuntime({
+        model: createAgentModelAdapter({
+          config: {
+            provider: "openai-compatible",
+            modelId: "integration-test-model",
+            baseUrl,
+            requestTimeoutMs: 5_000
+          }
+        }),
+        tools: manager.getAgentTools(),
+        permissions: new CallbackPermissionService(async () => decision),
+        maxIterations: 3
+      });
+      const result = await runtime.run({
+        messages: [{ role: "user", content: "Use the connected MCP echo tool." }],
+        signal: new AbortController().signal,
+        onEvent: () => {}
+      });
+      assert.equal(result.reason, "completed");
+      assert.equal(result.finalText, "MCP tool turn completed.");
+    });
+
+    assert.equal(requestCount, 2);
+    assert.equal(getMcpToolCallCount(), decision === "allow" ? 1 : 0,
+      "Denied MCP tools must never reach the MCP server.");
+    assert.equal(serverRequests.length, 2);
+    const toolResult = serverRequests[1].messages.find((message) =>
+      message.role === "tool" && message.tool_call_id === "mcp-integration-call-1"
+    );
+    assert.ok(toolResult);
+    if (decision === "deny") assert.match(toolResult.content, /denied/i);
+    else assert.match(toolResult.content, /echo:hello from MCP/);
+  });
+
+  await manager.disconnectAll();
+}
+
 async function run() {
   const extensionId = "sanusaurav8082.ai-chatbox";
   const extension = vscode.extensions.getExtension(extensionId);
@@ -224,8 +351,10 @@ async function run() {
   // Exercise the actual HTTP adapter and agent loop against a local deterministic server.
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
+  await testMcpAgentToolApproval("allow");
+  await testMcpAgentToolApproval("deny");
 
-  console.log("AI Chatbox VS Code, streaming, cancellation, and agent/provider integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, and MCP integration checks passed.");
 }
 
 module.exports = { run };
