@@ -27,7 +27,9 @@
     "onCommand:aiChatbox.connectMcpServer",
     "onCommand:aiChatbox.disconnectMcpServer",
     "onCommand:aiChatbox.setMcpServerToken",
-    "onCommand:aiChatbox.clearMcpServerToken"
+    "onCommand:aiChatbox.clearMcpServerToken",
+    "onCommand:aiChatbox.showMcpServerStatus",
+    "onCommand:aiChatbox.showMcpDiagnostics"
   ],
   "contributes": {
     "commands": [
@@ -58,6 +60,14 @@
       {
         "command": "aiChatbox.clearMcpServerToken",
         "title": "AI Chatbox: Clear MCP Server Bearer Token"
+      },
+      {
+        "command": "aiChatbox.showMcpServerStatus",
+        "title": "AI Chatbox: Show MCP Server Status"
+      },
+      {
+        "command": "aiChatbox.showMcpDiagnostics",
+        "title": "AI Chatbox: Show MCP Diagnostics"
       }
     ],
     "configuration": {
