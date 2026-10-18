@@ -98,6 +98,15 @@ export function parseMcpServerConfig(value: unknown): McpServerConfig {
   throw new Error('MCP server transport must be "stdio" or "streamable-http".');
 }
 
+export function describeMcpServerEndpoint(config: McpServerConfig): string {
+  if (config.transport === "stdio") return `stdio command: ${config.command}`;
+  const url = new URL(config.url);
+  // Query strings and fragments can contain sensitive values; omit them from diagnostics.
+  url.search = "";
+  url.hash = "";
+  return `Streamable HTTP endpoint: ${url.toString()}`;
+}
+
 export function createMcpToolName(serverName: string, toolName: string): string {
   const raw = `mcp_${serverName}_${toolName}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
   if (raw.length <= 80) return raw;
@@ -111,6 +120,7 @@ export function createMcpToolName(serverName: string, toolName: string): string 
  */
 export class McpManager {
   private readonly connected = new Map<string, ConnectedServer>();
+  private readonly connectionErrors = new Map<string, string>();
 
   constructor(private readonly getBearerToken: (serverName: string) => Promise<string | undefined>) {}
 
@@ -123,6 +133,19 @@ export class McpManager {
       serverName: server.name,
       tools: server.tools.map((tool) => ({ ...tool }))
     }));
+  }
+
+  /** Last connection error for diagnostics. */
+  getConnectionError(serverName: string): string | undefined {
+    return this.connectionErrors.get(serverName);
+  }
+
+  recordConnectionError(serverName: string, message: string): void {
+    this.connectionErrors.set(serverName, message.slice(0, 2_000));
+  }
+
+  clearConnectionError(serverName: string): void {
+    this.connectionErrors.delete(serverName);
   }
 
   async connect(serverName: string, rawConfig: unknown): Promise<McpToolSummary[]> {

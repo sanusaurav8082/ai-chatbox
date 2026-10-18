@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 5 — MCP client integration.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 6 — MCP diagnostics.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -13,6 +13,8 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Per-call approval UI showing tool arguments; denied tools are not executed
 - Read-only workspace file listing tool with a 100-path limit
 - MCP client for stdio and Streamable HTTP, with explicit connection approval
+- MCP server status command showing connection state, transport, discovered tool count, and recent connection errors
+- Dedicated `AI Chatbox MCP` Output channel for connection and disconnection diagnostics
 - MCP tool discovery, JSON Schema validation, and per-call approval through the same agent runtime
 - HTTPS enforcement for remote MCP endpoints; localhost HTTP is allowed for development
 - MCP bearer tokens stored in VS Code SecretStorage, not settings
@@ -66,7 +68,7 @@ Use **AI Chatbox: Clear OpenAI API Key** to remove the stored key. The key is st
 
 MCP servers are **not** started automatically. Add named entries to `aiChatbox.mcpServers` in VS Code `settings.json`, review the command or URL, and run **AI Chatbox: Connect MCP Server**. The extension shows a confirmation dialog before it starts a local process or contacts a remote server. Connection approval is separate from tool approval: each invocation still requires explicit approval in chat.
 
-A stdio entry uses `transport: "stdio"`, `command`, optional `args`, `cwd`, and `env`. A remote entry uses `transport: "streamable-http"` and `url`. Remote endpoints must use HTTPS; plain HTTP is accepted only for localhost. Do not put tokens in settings or URLs. For a bearer-authenticated HTTP server, run **AI Chatbox: Set MCP Server Bearer Token**; credentials are stored in VS Code SecretStorage. Use **AI Chatbox: Clear MCP Server Bearer Token** to delete a stored token and **AI Chatbox: Disconnect MCP Server** to close a connection.
+A stdio entry uses `transport: "stdio"`, `command`, optional `args`, `cwd`, and `env`. A remote entry uses `transport: "streamable-http"` and `url`. Remote endpoints must use HTTPS; plain HTTP is accepted only for localhost. Do not put tokens in settings or URLs. For a bearer-authenticated HTTP server, run **AI Chatbox: Set MCP Server Bearer Token**; credentials are stored in VS Code SecretStorage. Use **AI Chatbox: Clear MCP Server Bearer Token** to delete a stored token and **AI Chatbox: Disconnect MCP Server** to close a connection. Run **AI Chatbox: Show MCP Server Status** to inspect configured servers and discovered tool counts, or **AI Chatbox: Show MCP Diagnostics** to open the `AI Chatbox MCP` Output channel. Endpoint query strings and fragments are omitted from diagnostic summaries.
 
 Only connect to servers you trust: an MCP server may access data or perform operations available to its process. OAuth flows, external config importers, resources, and prompts remain follow-up work.
 

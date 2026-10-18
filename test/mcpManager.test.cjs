@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseMcpServerConfig, createMcpToolName } = require("../dist/mcpManager.js");
+const { parseMcpServerConfig, createMcpToolName, describeMcpServerEndpoint } = require("../dist/mcpManager.js");
 
 test("accepts a valid stdio MCP server configuration", () => {
   assert.deepEqual(parseMcpServerConfig({
@@ -44,6 +44,14 @@ test("rejects malformed stdio configuration and oversized arguments", () => {
   assert.throws(() => parseMcpServerConfig({
     transport: "stdio", command: "node", env: { "NOT VALID": "value" }
   }), /valid environment names/);
+});
+
+test("redacts query strings and fragments from MCP endpoint diagnostics", () => {
+  const config = parseMcpServerConfig({
+    transport: "streamable-http", url: "https://mcp.example.com/mcp?access_token=secret#fragment"
+  });
+  assert.equal(describeMcpServerEndpoint(config), "Streamable HTTP endpoint: https://mcp.example.com/mcp");
+  assert.equal(describeMcpServerEndpoint({ transport: "stdio", command: "node" }), "stdio command: node");
 });
 
 test("names MCP tools with a stable server prefix and safe characters", () => {
