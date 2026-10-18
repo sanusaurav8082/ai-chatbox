@@ -40,6 +40,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const openChat = vscode.commands.registerCommand("aiChatbox.open", () => {
     ChatView.open(context, mcpManager!);
   });
+  const clearConversation = vscode.commands.registerCommand("aiChatbox.clearConversation", async () => {
+    await ChatView.clearConversation(context);
+    void vscode.window.showInformationMessage("AI Chatbox: saved conversation cleared.");
+  });
 
   const setOpenAiApiKey = vscode.commands.registerCommand(
     "aiChatbox.setOpenAiApiKey",
@@ -209,7 +213,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(
-    openChat, setOpenAiApiKey, clearOpenAiApiKey,
+    openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
     connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
     showMcpStatus, showMcpOutput
   );

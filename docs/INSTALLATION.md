@@ -33,6 +33,10 @@ Alternatively, open VS Code → Extensions → **…** → **Install from VSIX�
 
 Do not test against an MCP server you do not trust. A successful package build or CI run verifies package structure, not live model-provider or third-party MCP interoperability.
 
+## Conversation persistence and privacy
+
+Conversation persistence is disabled by default. To enable it, set `aiChatbox.persistConversation` to `true` in VS Code Settings. When enabled, the bounded conversation history is stored in VS Code workspace state for the current workspace and restored when the chat is reopened. This may include prompts, model responses, and tool outputs; enable it only if that is appropriate for your workspace. Run **AI Chatbox: Clear Saved Conversation** to remove the saved history. Turning persistence off stops future saves and removes the stored copy the next time the chat is opened or updated.
+
 ## Uninstall
 
 ```bash
