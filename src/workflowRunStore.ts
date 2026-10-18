@@ -85,7 +85,7 @@ function validateRun(value: unknown): WorkflowRun | undefined {
     const terminalStep = workflow.steps[stepIndex];
     const terminalOutcome = outcomes.at(-1)?.outcome;
     if (terminalStep.type === "approval") {
-      if (terminalOutcome !== "denied") return undefined;
+      if (terminalOutcome !== "denied" || terminalStep.onDeny === "continue") return undefined;
     } else if (terminalOutcome !== "failed" ||
         (attempts[terminalStep.id] ?? 1) < (terminalStep.retryPolicy?.maxAttempts ?? 1)) return undefined;
   }
