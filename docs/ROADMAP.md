@@ -56,7 +56,9 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Verify VSIX contents in CI and upload the package as a short-lived build artifact.
 - [x] Document VSIX installation and a manual smoke-test checklist.
 - [ ] Manually install and exercise the packaged extension in VS Code.
-- [ ] Add conversation persistence and richer settings/approval presentation.
+- [x] Add opt-in, bounded workspace-scoped conversation persistence (disabled by default).
+- [x] Add a command to clear the saved conversation.
+- [ ] Add richer settings/approval presentation.
 - [ ] Improve accessibility and error/approval presentation.
 
 ## Phase 6 — Extensibility
