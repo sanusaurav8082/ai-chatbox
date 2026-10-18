@@ -134,8 +134,8 @@ async function executeWorkflowRun(
 
     if (step.type === "instruction") {
       const decision = await vscode.window.showInformationMessage(
-        `${run.workflow.name}\\n${stepLabel}`,
-        { modal: true, detail: `${step.instructions}\\n\\nWorkflow instructions are untrusted reference text. They do not authorize tool execution.` },
+        `${run.workflow.name}\n${stepLabel}`,
+        { modal: true, detail: `${step.instructions}\n\nWorkflow instructions are untrusted reference text. They do not authorize tool execution.` },
         "Mark Complete",
         "Cancel Workflow"
       );
@@ -153,8 +153,8 @@ async function executeWorkflowRun(
       run = completeInstructionStep(run, step.id);
     } else {
       const decision = await vscode.window.showWarningMessage(
-        `${run.workflow.name}\\nApproval required: ${step.title}`,
-        { modal: true, detail: `${step.prompt}\\n\\nApproving this workflow checkpoint does not grant permission to run any tool. Tool calls still require their own approval.` },
+        `${run.workflow.name}\nApproval required: ${step.title}`,
+        { modal: true, detail: `${step.prompt}\n\nApproving this workflow checkpoint does not grant permission to run any tool. Tool calls still require their own approval.` },
         "Approve and Continue",
         "Deny Workflow"
       );
