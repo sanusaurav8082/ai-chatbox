@@ -1,0 +1,13 @@
+{
+  "id": "typescript.debugging",
+  "version": "1.0.0",
+  "name": "TypeScript debugging",
+  "description": "A concise workflow for investigating TypeScript compiler errors.",
+  "instructions": "Read the complete compiler diagnostic. Identify the smallest relevant source location. Explain the likely cause, propose the smallest safe change, and suggest a focused test or type-check to verify it. Do not claim to have run checks unless they were actually run.",
+  "keywords": [
+    "typescript",
+    "debugging",
+    "compiler error",
+    "type error"
+  ]
+}
