@@ -83,7 +83,7 @@ Only connect to servers you trust: an MCP server may access data or perform oper
 | `aiChatbox.baseUrl` | `http://localhost:11434/v1` | Base URL for compatible endpoints; ignored for OpenAI |
 | `aiChatbox.requestTimeoutMs` | `120000` | Request timeout, from 1 to 300 seconds |
 | `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
-| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
+| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |\n| `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
 
 To rebuild automatically while editing:
 

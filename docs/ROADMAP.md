@@ -67,7 +67,11 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 
 - [x] Add a pure skill registry with versioned manifest validation, enable/disable controls, bounded metadata, and deterministic keyword-based context selection.
 - [x] Load skills from documented workspace/user locations only when explicitly enabled, and expose selected instructions to request-scoped agent context.
-- [x] Add a pure versioned workflow manifest registry and immutable state machine for instruction steps and explicit approval checkpoints.\n- [ ] Add opt-in workflow file loading, chat/UI integration, and ensure tool actions still require per-invocation approval.\n- [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
+- [x] Add a pure versioned workflow manifest registry and immutable state machine for instruction steps and explicit approval checkpoints.
+- [x] Add opt-in, bounded workflow file loading from workspace and user storage, plus a native VS Code command UI for instruction and approval steps.
+- [x] Keep workflow approval separate from per-tool approval; workflows do not execute tools or arbitrary code.
+- [ ] Integrate workflow progress into the chat webview and persist/resume runs.
+- [ ] Add workflow conditions and bounded retry policies after the basic execution path is integrated.
 - [ ] Add knowledge sources, local indexing, and retrieval.
 - [ ] Document extension interfaces and compatibility guarantees.
 

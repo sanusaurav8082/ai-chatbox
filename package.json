@@ -34,7 +34,9 @@
     "onCommand:aiChatbox.clearMcpServerToken",
     "onCommand:aiChatbox.showMcpServerStatus",
     "onCommand:aiChatbox.showMcpDiagnostics",
-    "onCommand:aiChatbox.clearConversation"
+    "onCommand:aiChatbox.clearConversation",
+    "onCommand:aiChatbox.runWorkflow",
+    "onCommand:aiChatbox.showWorkflowDiagnostics"
   ],
   "contributes": {
     "commands": [
@@ -77,6 +79,14 @@
       {
         "command": "aiChatbox.clearConversation",
         "title": "AI Chatbox: Clear Saved Conversation"
+      },
+      {
+        "command": "aiChatbox.runWorkflow",
+        "title": "AI Chatbox: Run Workflow"
+      },
+      {
+        "command": "aiChatbox.showWorkflowDiagnostics",
+        "title": "AI Chatbox: Show Workflow Diagnostics"
       }
     ],
     "configuration": {
@@ -163,6 +173,11 @@
           "type": "boolean",
           "default": false,
           "description": "Persist bounded conversation history in workspace state. Disabled by default because prompts and model responses may contain sensitive information."
+        },
+        "aiChatbox.workflowsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to loading versioned JSON workflows from workspace .ai-chatbox/workflows and the AI Chatbox user storage workflows directory. Workflows only provide instructions and approval checkpoints; tool calls still require separate approval."
         }
       }
     }
