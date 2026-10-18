@@ -90,3 +90,24 @@ test("surfaces bounded HTTP error details", async () => {
     /Model request failed \(400\): bad model/
   );
 });
+
+test("does not start a request when cancellation already happened", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let fetchCalled = false;
+
+  await assert.rejects(
+    streamChatCompletion({
+      config,
+      messages: [{ role: "user", content: "Hi" }],
+      signal: controller.signal,
+      onDelta() {},
+      fetchImpl: async () => {
+        fetchCalled = true;
+        throw new Error("fetch should not be called");
+      }
+    }),
+    /Request cancelled/
+  );
+  assert.equal(fetchCalled, false);
+});
