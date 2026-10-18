@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 15 — resumable workflows.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 16 — local knowledge retrieval.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -30,6 +30,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default
 - Versioned workflow/SOP definitions with bounded loading and explicit approval checkpoints
 - Live workflow progress cards in chat and validated run snapshots that can be resumed after restarting VS Code
+- Opt-in local Markdown/text knowledge retrieval with bounded lexical search and source-path context
 
 ## Prerequisites
 
@@ -76,6 +77,10 @@ A stdio entry uses `transport: "stdio"`, `command`, optional `args`, `cwd`, and 
 
 Only connect to servers you trust: an MCP server may access data or perform operations available to its process. OAuth flows, external config importers, resources, and prompts remain follow-up work.
 
+### Local knowledge
+
+Local knowledge retrieval is disabled by default. Set `aiChatbox.knowledgeEnabled` to `true` to include relevant excerpts from Markdown/text files in `.ai-chatbox/knowledge/` and the extension's user-storage `knowledge/` directory. The extension builds a bounded lexical index per request and adds up to five relevant excerpts as untrusted context. No embedding service or persistent index is used. When enabled, retrieved text is sent to the configured model provider. Review the files you add and keep sensitive content out of these folders. See [the knowledge guide](docs/KNOWLEDGE.md) and [example runbook](docs/examples/knowledge/release-runbook.md).
+
 ### Settings
 
 | Setting | Default | Purpose |
@@ -86,6 +91,7 @@ Only connect to servers you trust: an MCP server may access data or perform oper
 | `aiChatbox.requestTimeoutMs` | `120000` | Request timeout, from 1 to 300 seconds |
 | `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
 | `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
+| `aiChatbox.knowledgeEnabled` | `false` | Opt in to retrieving relevant Markdown/text excerpts from workspace and user knowledge folders |
 | `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
 
 To rebuild automatically while editing:
