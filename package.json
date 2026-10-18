@@ -2,21 +2,63 @@
   "name": "ai-chatbox",
   "displayName": "AI Chatbox",
   "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "sanusaurav8082",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Other", "Machine Learning"],
-  "keywords": ["ai", "chat", "agent", "mcp", "llm"],
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "ai",
+    "chat",
+    "agent",
+    "mcp",
+    "llm"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onCommand:aiChatbox.open", "onCommand:aiChatbox.setOpenAiApiKey", "onCommand:aiChatbox.clearOpenAiApiKey"],
+  "activationEvents": [
+    "onCommand:aiChatbox.open",
+    "onCommand:aiChatbox.setOpenAiApiKey",
+    "onCommand:aiChatbox.clearOpenAiApiKey",
+    "onCommand:aiChatbox.connectMcpServer",
+    "onCommand:aiChatbox.disconnectMcpServer",
+    "onCommand:aiChatbox.setMcpServerToken",
+    "onCommand:aiChatbox.clearMcpServerToken"
+  ],
   "contributes": {
     "commands": [
-      { "command": "aiChatbox.open", "title": "AI Chatbox: Open Chat" },
-      { "command": "aiChatbox.setOpenAiApiKey", "title": "AI Chatbox: Set OpenAI API Key" },
-      { "command": "aiChatbox.clearOpenAiApiKey", "title": "AI Chatbox: Clear OpenAI API Key" }
+      {
+        "command": "aiChatbox.open",
+        "title": "AI Chatbox: Open Chat"
+      },
+      {
+        "command": "aiChatbox.setOpenAiApiKey",
+        "title": "AI Chatbox: Set OpenAI API Key"
+      },
+      {
+        "command": "aiChatbox.clearOpenAiApiKey",
+        "title": "AI Chatbox: Clear OpenAI API Key"
+      },
+      {
+        "command": "aiChatbox.connectMcpServer",
+        "title": "AI Chatbox: Connect MCP Server"
+      },
+      {
+        "command": "aiChatbox.disconnectMcpServer",
+        "title": "AI Chatbox: Disconnect MCP Server"
+      },
+      {
+        "command": "aiChatbox.setMcpServerToken",
+        "title": "AI Chatbox: Set MCP Server Bearer Token"
+      },
+      {
+        "command": "aiChatbox.clearMcpServerToken",
+        "title": "AI Chatbox: Clear MCP Server Bearer Token"
+      }
     ],
     "configuration": {
       "title": "AI Chatbox",
@@ -28,7 +70,10 @@
         },
         "aiChatbox.provider": {
           "type": "string",
-          "enum": ["openai-compatible", "openai"],
+          "enum": [
+            "openai-compatible",
+            "openai"
+          ],
           "default": "openai-compatible",
           "description": "Model API provider. Local endpoints should implement the OpenAI Chat Completions API."
         },
@@ -48,6 +93,47 @@
           "minimum": 1000,
           "maximum": 300000,
           "description": "Maximum time to wait for a model response, in milliseconds."
+        },
+        "aiChatbox.mcpServers": {
+          "type": "object",
+          "default": {},
+          "description": "Named MCP server configurations. Servers are not started or connected until you explicitly run AI Chatbox: Connect MCP Server and approve the reviewed configuration.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "transport": {
+                "type": "string",
+                "enum": [
+                  "stdio",
+                  "streamable-http"
+                ]
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "transport"
+            ]
+          }
         }
       }
     }
@@ -66,5 +152,10 @@
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ajv": "^8.17.1",
+    "zod": "^4.1.12"
   }
 }

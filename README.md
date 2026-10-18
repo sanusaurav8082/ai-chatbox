@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 4 — agent tool-call integration.** OpenAI-compatible structured tool calls now connect to the agent runtime. The chat UI displays requested arguments and requires explicit per-call approval. The first built-in tool lists workspace file paths (read-only, maximum 100). MCP integration follows in a later phase.
+> **Current status: Phase 5 — MCP client integration.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -12,6 +12,10 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - OpenAI-compatible structured tool calls routed through the agent runtime
 - Per-call approval UI showing tool arguments; denied tools are not executed
 - Read-only workspace file listing tool with a 100-path limit
+- MCP client for stdio and Streamable HTTP, with explicit connection approval
+- MCP tool discovery, JSON Schema validation, and per-call approval through the same agent runtime
+- HTTPS enforcement for remote MCP endpoints; localhost HTTP is allowed for development
+- MCP bearer tokens stored in VS Code SecretStorage, not settings
 - OpenAI API support with credentials stored in VS Code SecretStorage
 - OpenAI-compatible local endpoint support (for example, Ollama or LM Studio when its OpenAI-compatible API is enabled)
 - Configurable provider, model ID, endpoint, and request timeout
@@ -58,6 +62,14 @@ These values are VS Code settings; the model must already be installed and the s
 
 Use **AI Chatbox: Clear OpenAI API Key** to remove the stored key. The key is stored with VS Code `SecretStorage`, not in settings or the webview. API usage may incur charges according to your provider's terms.
 
+### MCP servers
+
+MCP servers are **not** started automatically. Add named entries to `aiChatbox.mcpServers` in VS Code `settings.json`, review the command or URL, and run **AI Chatbox: Connect MCP Server**. The extension shows a confirmation dialog before it starts a local process or contacts a remote server. Connection approval is separate from tool approval: each invocation still requires explicit approval in chat.
+
+A stdio entry uses `transport: "stdio"`, `command`, optional `args`, `cwd`, and `env`. A remote entry uses `transport: "streamable-http"` and `url`. Remote endpoints must use HTTPS; plain HTTP is accepted only for localhost. Do not put tokens in settings or URLs. For a bearer-authenticated HTTP server, run **AI Chatbox: Set MCP Server Bearer Token**; credentials are stored in VS Code SecretStorage. Use **AI Chatbox: Clear MCP Server Bearer Token** to delete a stored token and **AI Chatbox: Disconnect MCP Server** to close a connection.
+
+Only connect to servers you trust: an MCP server may access data or perform operations available to its process. OAuth flows, external config importers, resources, and prompts remain follow-up work.
+
 ### Settings
 
 | Setting | Default | Purpose |
@@ -91,10 +103,12 @@ src/
   modelClient.ts    OpenAI-compatible HTTP/SSE chat client
   agentModelAdapter.ts  Structured Chat Completions tool-call adapter
   agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
+  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation
 test/
   modelClient.test.cjs   Focused model client tests
   agentRuntime.test.cjs  Deterministic agent runtime tests
   agentModelAdapter.test.cjs  Structured tool-call adapter tests
+  mcpManager.test.cjs    MCP configuration and safety tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
   ROADMAP.md        Incremental implementation plan
@@ -128,10 +142,9 @@ Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md)
 
 ## Planned work
 
-1. Wire provider-native tool calling into the agent runtime and expose approval events in the chat UI
-2. MCP client: stdio first, then Streamable HTTP
-3. Conversation persistence and richer settings/approval UX
-4. Skills, SOP/workflows, and knowledge retrieval
+1. Package and install a VSIX, plus improve connection/approval presentation
+2. Conversation persistence and richer settings/approval UX
+3. Skills, SOP/workflows, and knowledge retrieval
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for acceptance criteria and status.
 

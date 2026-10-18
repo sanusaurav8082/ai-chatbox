@@ -79,7 +79,7 @@ export function createAgentModelAdapter(options: {
             function: {
               name: tool.name,
               description: tool.description,
-              parameters: { type: "object", properties: {}, additionalProperties: true }
+              parameters: tool.inputSchema ?? { type: "object", properties: {}, additionalProperties: true }
             }
           }));
           body.tool_choice = "auto";
