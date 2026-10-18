@@ -87,7 +87,6 @@ Only connect to servers you trust: an MCP server may access data or perform oper
 | `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
 | `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
 | `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
-| `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
 
 To rebuild automatically while editing:
 
