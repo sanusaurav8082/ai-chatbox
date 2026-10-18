@@ -31,7 +31,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Validate tool inputs and require explicit permission before executing tools.
 - [x] Default to deny-all permissions when no approval policy is supplied.
 - [x] Add deterministic tests with a fake model adapter.
-- [ ] Wire provider-native tool calls and approval events into the chat UI.
+- [x] Wire OpenAI-compatible structured tool calls into the agent runtime.\n- [x] Show proposed tool arguments and require explicit per-call approval in the chat UI.\n- [x] Add a bounded, read-only workspace file-listing tool as the first executable tool.\n- [ ] Verify interactively against a local model that supports tool calling.
 
 ## Phase 4 — MCP client
 
