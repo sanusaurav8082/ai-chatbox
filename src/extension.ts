@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { ChatView, OPENAI_API_KEY_SECRET } from "./chatView";
 import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
 import { loadWorkflowFiles, getRunnableWorkflows, MAX_WORKFLOW_FILE_BYTES, WorkflowFile } from "./workflowLoader";
-import { WorkflowRun, completeInstructionStep, decideWorkflowApproval, getCurrentWorkflowStep, startWorkflow } from "./workflowRuntime";
+import { WorkflowRun, completeInstructionStep, decideWorkflowApproval, failInstructionStep, getCurrentWorkflowStep, getWorkflowStepAttempt, retryInstructionStep, startWorkflow } from "./workflowRuntime";
 import { upsertSavedWorkflowRun, validateSavedWorkflowRecords } from "./workflowRunStore";
 
 export const MCP_TOKEN_SECRET_PREFIX = "aiChatbox.mcpToken.";
@@ -121,22 +121,53 @@ async function executeWorkflowRun(
   await saveWorkflowRun(context, runId, run);
   output.appendLine(`Workflow "${run.workflow.id}" v${run.workflow.version} run "${runId}" is ${run.status}.`);
 
-  while (run.status === "running" || run.status === "awaiting-approval") {
+  while (run.status === "running" || run.status === "awaiting-approval" || run.status === "awaiting-retry") {
     const step = getCurrentWorkflowStep(run);
     if (!step) {
       publishWorkflowProgress(runId, run, "Error", "The workflow reached an invalid step state.");
       void vscode.window.showErrorMessage("Workflow runtime reached an invalid step state.");
       return;
     }
-    const status = run.status === "awaiting-approval" ? "Awaiting approval" : "In progress";
+    const status = run.status === "awaiting-approval" ? "Awaiting approval" : run.status === "awaiting-retry" ? "Awaiting retry" : "In progress";
     publishWorkflowProgress(runId, run, status);
     const stepLabel = `Step ${run.stepIndex + 1} of ${run.workflow.steps.length}: ${step.title}`;
+
+    if (run.status === "awaiting-retry") {
+      if (step.type !== "instruction") {
+        publishWorkflowProgress(runId, run, "Error", "Retry state did not point to an instruction step.");
+        void vscode.window.showErrorMessage("Workflow retry state is invalid.");
+        return;
+      }
+      const attempt = getWorkflowStepAttempt(run, step.id);
+      const maxAttempts = step.retryPolicy?.maxAttempts ?? 1;
+      const decision = await vscode.window.showWarningMessage(
+        `${run.workflow.name}\nRetry instruction: ${step.title}`,
+        { modal: true, detail: `Attempt ${attempt} of ${maxAttempts} failed. Retrying repeats this manual checklist instruction; it does not automatically rerun commands, tools, or code.` },
+        "Retry Step",
+        "Cancel Workflow"
+      );
+      if (decision === undefined) {
+        publishWorkflowProgress(runId, run, "Paused", "Retry decision dismissed. Resume this saved run with AI Chatbox: Resume Workflow.");
+        output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" paused while awaiting a retry decision.`);
+        return;
+      }
+      if (decision === "Cancel Workflow") {
+        await removeWorkflowRun(context, runId);
+        publishWorkflowProgress(runId, run, "Cancelled", "Cancelled by the user.");
+        output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" cancelled by the user.`);
+        return;
+      }
+      run = retryInstructionStep(run, step.id);
+      await saveWorkflowRun(context, runId, run);
+      continue;
+    }
 
     if (step.type === "instruction") {
       const decision = await vscode.window.showInformationMessage(
         `${run.workflow.name}\n${stepLabel}`,
         { modal: true, detail: `${step.instructions}\n\nWorkflow instructions are untrusted reference text. They do not authorize tool execution.` },
         "Mark Complete",
+        "Mark Failed",
         "Cancel Workflow"
       );
       if (decision === undefined) {
@@ -150,7 +181,7 @@ async function executeWorkflowRun(
         output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" cancelled by the user.`);
         return;
       }
-      run = completeInstructionStep(run, step.id);
+      run = decision === "Mark Failed" ? failInstructionStep(run, step.id) : completeInstructionStep(run, step.id);
     } else {
       const decision = await vscode.window.showWarningMessage(
         `${run.workflow.name}\nApproval required: ${step.title}`,
@@ -168,9 +199,14 @@ async function executeWorkflowRun(
 
     await saveWorkflowRun(context, runId, run);
     if (run.status === "cancelled") {
-      publishWorkflowProgress(runId, run, "Cancelled", `Approval denied at checkpoint "${step.title}".`);
-      output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" denied at checkpoint "${step.id}".`);
-      void vscode.window.showInformationMessage(`Workflow "${run.workflow.name}" was cancelled because an approval checkpoint was denied.`);
+      const failureDetail = step.type === "instruction"
+        ? `Retry limit exhausted at instruction "${step.title}".`
+        : `Approval denied at checkpoint "${step.title}".`;
+      publishWorkflowProgress(runId, run, "Cancelled", failureDetail);
+      output.appendLine(`Workflow "${run.workflow.id}" run "${runId}" cancelled: ${failureDetail}`);
+      void vscode.window.showInformationMessage(step.type === "instruction"
+        ? `Workflow "${run.workflow.name}" was cancelled because the instruction retry limit was exhausted.`
+        : `Workflow "${run.workflow.name}" was cancelled because an approval checkpoint was denied.`);
       return;
     }
   }
@@ -221,7 +257,7 @@ async function resumeWorkflowRun(context: vscode.ExtensionContext, output: vscod
     return;
   }
   const records = validateSavedWorkflowRecords(context.globalState.get<unknown>(WORKFLOW_RUNS_KEY))
-    .filter((record) => record.run.status === "running" || record.run.status === "awaiting-approval");
+    .filter((record) => record.run.status === "running" || record.run.status === "awaiting-approval" || record.run.status === "awaiting-retry");
   if (!records.length) {
     void vscode.window.showInformationMessage("No resumable workflow runs were found.");
     return;
