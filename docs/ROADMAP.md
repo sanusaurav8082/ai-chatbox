@@ -49,6 +49,9 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 
 ## Phase 5 — Extension experience
 
+- [x] Add MCP server status inspection for configured, connected, disconnected, and invalid configurations.
+- [x] Show discovered tool counts and recent connection errors.
+- [x] Add an Output channel for MCP connection diagnostics while omitting URL query strings and fragments from endpoint summaries.
 - [ ] Package and install a VSIX.
 - [ ] Add conversation persistence and richer settings/approval presentation.
 - [ ] Improve accessibility and error/approval presentation.
