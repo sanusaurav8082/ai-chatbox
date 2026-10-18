@@ -20,6 +20,7 @@ type WebviewMessage =
   | { type: "toolDecision"; toolCallId: string; decision: "allow" | "deny" };
 
 type ModelUiMessage =
+  | { type: "conversationRestore"; messages: Array<{ role: "user" | "assistant"; content: string }> }
   | { type: "assistantStart" }
   | { type: "assistantDelta"; text: string }
   | { type: "assistantDone" }
@@ -30,6 +31,56 @@ type ModelUiMessage =
 const MAX_PROMPT_LENGTH = 20_000;
 const MAX_HISTORY_MESSAGES = 40;
 const MAX_TOOL_APPROVALS_PENDING = 8;
+const CONVERSATION_STORAGE_KEY = "aiChatbox.conversation.v1";
+const MAX_STORED_CONVERSATION_BYTES = 250_000;
+
+function validStoredConversation(value: unknown): AgentMessage[] {
+  if (!Array.isArray(value) || value.length > MAX_HISTORY_MESSAGES) return [];
+  try {
+    if (JSON.stringify(value).length > MAX_STORED_CONVERSATION_BYTES) return [];
+  } catch {
+    return [];
+  }
+  const result: AgentMessage[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const message = item as Record<string, unknown>;
+    if (typeof message.content !== "string" || message.content.length > 50_000) return [];
+    if (message.role === "system" || message.role === "user" || message.role === "assistant") {
+      if (message.role === "assistant" && message.toolCalls !== undefined) {
+        if (!Array.isArray(message.toolCalls) || message.toolCalls.length > 8) return [];
+        const toolCalls = message.toolCalls;
+        if (!toolCalls.every((call) => !!call && typeof call === "object" &&
+          typeof (call as Record<string, unknown>).id === "string" &&
+          typeof (call as Record<string, unknown>).name === "string" &&
+          "arguments" in (call as Record<string, unknown>))) return [];
+        result.push({ role: "assistant", content: message.content, toolCalls: toolCalls as { id: string; name: string; arguments: unknown }[] });
+      } else {
+        result.push({ role: message.role, content: message.content });
+      }
+    } else if (message.role === "tool" &&
+      typeof message.toolCallId === "string" && message.toolCallId.length <= 200 &&
+      typeof message.name === "string" && message.name.length <= 200) {
+      result.push({
+        role: "tool",
+        toolCallId: message.toolCallId,
+        name: message.name,
+        content: message.content
+      });
+    } else {
+      return [];
+    }
+  }
+  return result;
+}
+
+function transcriptMessages(messages: AgentMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
+  return messages.flatMap((message) =>
+    (message.role === "user" || message.role === "assistant") && message.content.trim()
+      ? [{ role: message.role, content: message.content }]
+      : []
+  );
+}
 
 export class ChatView {
   private static currentPanel: vscode.WebviewPanel | undefined;
@@ -52,7 +103,12 @@ export class ChatView {
       localResourceRoots: []
     });
     ChatView.currentPanel = panel;
-    ChatView.conversation = [];
+    const persistConversation = vscode.workspace.getConfiguration("aiChatbox")
+      .get<boolean>("persistConversation", false);
+    ChatView.conversation = persistConversation
+      ? validStoredConversation(context.workspaceState.get<unknown>(CONVERSATION_STORAGE_KEY))
+      : [];
+    if (!persistConversation) void context.workspaceState.update(CONVERSATION_STORAGE_KEY, undefined);
     panel.webview.html = ChatView.getHtml(panel.webview);
 
     panel.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
@@ -61,7 +117,10 @@ export class ChatView {
       if (message.type === "ready") {
         const showWelcome = vscode.workspace.getConfiguration("aiChatbox")
           .get<boolean>("showWelcomeMessage", true);
-        if (showWelcome) {
+        const restoredMessages = transcriptMessages(ChatView.conversation);
+        if (restoredMessages.length) {
+          await panel.webview.postMessage({ type: "conversationRestore", messages: restoredMessages } satisfies ModelUiMessage);
+        } else if (showWelcome) {
           await panel.webview.postMessage({
             type: "assistant",
             text: "Welcome to AI Chatbox. Tool calls require your approval before they run. Configure aiChatbox.mcpServers and use “AI Chatbox: Connect MCP Server” to connect a reviewed MCP server. Choose a local OpenAI-compatible model in settings, or set an OpenAI key with “AI Chatbox: Set OpenAI API Key”."
@@ -208,6 +267,7 @@ export class ChatView {
         }
       });
       ChatView.conversation = result.messages.slice(-MAX_HISTORY_MESSAGES);
+      await ChatView.saveConversation(context);
       if (!result.finalText && result.reason !== "cancelled") {
         await panel.webview.postMessage({
           type: "assistantError",
@@ -219,10 +279,30 @@ export class ChatView {
       ChatView.conversation = ChatView.conversation.filter(
         (item, index, messages) => !(index === messages.length - 1 && item.role === "user" && item.content === text)
       );
+      await ChatView.saveConversation(context);
       await panel.webview.postMessage({ type: "assistantError", text: message } satisfies ModelUiMessage);
     } finally {
       await panel.webview.postMessage({ type: "assistantDone" } satisfies ModelUiMessage);
       if (ChatView.activeRequest === controller) ChatView.activeRequest = undefined;
+    }
+  }
+
+  private static async saveConversation(context: vscode.ExtensionContext): Promise<void> {
+    const enabled = vscode.workspace.getConfiguration("aiChatbox").get<boolean>("persistConversation", false);
+    await context.workspaceState.update(
+      CONVERSATION_STORAGE_KEY,
+      enabled ? ChatView.conversation.slice(-MAX_HISTORY_MESSAGES) : undefined
+    );
+  }
+
+  static async clearConversation(context: vscode.ExtensionContext): Promise<void> {
+    ChatView.conversation = [];
+    await context.workspaceState.update(CONVERSATION_STORAGE_KEY, undefined);
+    if (ChatView.currentPanel) {
+      await ChatView.currentPanel.webview.postMessage({
+        type: "conversationRestore",
+        messages: []
+      } satisfies ModelUiMessage);
     }
   }
 
@@ -409,7 +489,14 @@ promptInput.addEventListener("keydown", (event) => {
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || typeof message.type !== "string") return;
-  if (message.type === "assistant" && typeof message.text === "string") addMessage("assistant", message.text);
+  if (message.type === "conversationRestore" && Array.isArray(message.messages)) {
+    messages.replaceChildren();
+    toolCards.clear();
+    for (const item of message.messages) {
+      if (!item || (item.role !== "user" && item.role !== "assistant") || typeof item.content !== "string") continue;
+      addMessage(item.role, item.content);
+    }
+  } else if (message.type === "assistant" && typeof message.text === "string") addMessage("assistant", message.text);
   else if (message.type === "assistantStart") activeAssistant = addMessage("assistant", "");
   else if (message.type === "assistantDelta" && typeof message.text === "string" && activeAssistant) {
     activeAssistant.textContent += message.text;
