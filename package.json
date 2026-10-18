@@ -2,7 +2,7 @@
   "name": "ai-chatbox",
   "displayName": "AI Chatbox",
   "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "sanusaurav8082",
   "license": "MIT",
   "engines": {
@@ -153,7 +153,7 @@
     "watch": "node esbuild.mjs --watch",
     "check-types": "tsc --noEmit",
     "vscode:prepublish": "npm run check-types && npm run build",
-    "package": "npm run vscode:prepublish && vsce package",
+    "package": "npm run vscode:prepublish && vsce package --no-dependencies",
     "test": "npm run build && node --test test/*.test.cjs"
   },
   "devDependencies": {
