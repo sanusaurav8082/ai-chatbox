@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 5 — MCP client integration.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 6 — MCP diagnostics.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
