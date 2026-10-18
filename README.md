@@ -27,6 +27,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Agent runtime with model adapter interface, tool registry, argument validation, explicit permission service, iteration/output/history bounds, and cancellation
 - Safe default permission implementation that denies tool calls unless an approval decision explicitly allows them
 - Deterministic fake-model tests for tool execution, denial, invalid arguments, unknown tools, cancellation, and limits
+- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default
 
 ## Prerequisites
 
@@ -82,6 +83,7 @@ Only connect to servers you trust: an MCP server may access data or perform oper
 | `aiChatbox.baseUrl` | `http://localhost:11434/v1` | Base URL for compatible endpoints; ignored for OpenAI |
 | `aiChatbox.requestTimeoutMs` | `120000` | Request timeout, from 1 to 300 seconds |
 | `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
+| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
 
 To rebuild automatically while editing:
 
@@ -102,6 +104,10 @@ code --install-extension ./ai-chatbox-0.5.0.vsix
 ```
 
 Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git. The chat UI includes keyboard-visible focus, a live conversation region, status announcements, and explicit approve-once/deny controls; screen-reader behavior should still be verified in the target VS Code environment.
+
+### Skills
+
+Skill loading is disabled by default. To opt in, set `aiChatbox.skillsEnabled` to `true`. Workspace manifests go in `.ai-chatbox/skills/*.json`; user manifests go in the AI Chatbox extension global-storage `skills/` directory. See [the skills guide](docs/SKILLS.md) and [example manifest](docs/examples/typescript-debugging.skill.json). Skills are untrusted text guidance: the loader does not execute scripts or add tools, and every tool invocation still requires approval.
 
 ## Project layout
 
