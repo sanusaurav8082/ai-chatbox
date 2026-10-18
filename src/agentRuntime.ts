@@ -84,6 +84,7 @@ export interface AgentRunResult {
 const DEFAULT_MAX_ITERATIONS = 8;
 const DEFAULT_MAX_TOOL_RESULT_CHARS = 8_000;
 const DEFAULT_MAX_HISTORY_MESSAGES = 40;
+const MAX_TOOL_CALLS_PER_TURN = 8;
 
 export class AgentRuntime {
   private readonly tools = new Map<string, AgentToolDefinition>();
@@ -165,8 +166,17 @@ export class AgentRuntime {
           };
         }
 
-        for (const call of turn.toolCalls) {
+        for (const [callIndex, call] of turn.toolCalls.entries()) {
           this.throwIfCancelled(request.signal);
+          if (callIndex >= MAX_TOOL_CALLS_PER_TURN) {
+            messages.push({
+              role: "tool",
+              toolCallId: call.id,
+              name: call.name,
+              content: "Tool call skipped: the per-turn tool-call limit was reached."
+            });
+            continue;
+          }
           request.onEvent({
             type: "toolProposed",
             toolCallId: call.id,
