@@ -57,6 +57,7 @@ export interface McpNotification {
 export type McpDiagnosticStage =
   | "configuration"
   | "transport-connect"
+  | "transport-error"
   | "tool-discovery"
   | "tool-schema-refresh"
   | "unexpected-disconnect";
@@ -85,6 +86,8 @@ export function getMcpDiagnosticGuidance(stage: McpDiagnosticStage): string {
       return "Review aiChatbox.mcpServers in VS Code Settings and correct the invalid field before reconnecting.";
     case "transport-connect":
       return "Check that the local command can start or that the remote endpoint is reachable and uses the required transport security, then inspect the server logs.";
+    case "transport-error":
+      return "Check the MCP server process or network session and its logs, then reconnect manually once the underlying issue is resolved.";
     case "tool-discovery":
       return "Check the MCP server logs and confirm it supports the tools/list request; reconnect manually after fixing the server.";
     case "tool-schema-refresh":
@@ -286,7 +289,7 @@ export class McpManager {
       this.refreshingTools.delete(serverName);
       this.toolRefreshRequested.delete(serverName);
       const message = "MCP transport failed. Its tools have been disabled until you reconnect.";
-      const stage = "transport-connect" as const;
+      const stage = "transport-error" as const;
       this.recordConnectionError(serverName, message, stage);
       try { this.onConnectionEvent?.({ serverName, state: "error", stage, message, suggestedAction: getMcpDiagnosticGuidance(stage), receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
     };
@@ -314,7 +317,7 @@ export class McpManager {
       this.recordNotification(serverName, "tools-changed");
       try {
         await this.refreshToolSchemas(serverName, client);
-      } catch (error) {
+      } catch {
         // Avoid copying arbitrary server/transport error text into diagnostics.
         this.recordConnectionError(
           serverName,
