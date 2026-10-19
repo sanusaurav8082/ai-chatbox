@@ -54,11 +54,55 @@ export interface McpNotification {
   receivedAt: string;
 }
 
+export type McpDiagnosticStage =
+  | "configuration"
+  | "transport-connect"
+  | "tool-discovery"
+  | "tool-schema-refresh"
+  | "unexpected-disconnect";
+
+export interface McpConnectionDiagnostic {
+  serverName: string;
+  stage: McpDiagnosticStage;
+  message: string;
+  suggestedAction: string;
+  receivedAt: string;
+}
+
 export interface McpConnectionEvent {
   serverName: string;
   state: "disconnected" | "error";
+  stage: McpDiagnosticStage;
   message: string;
+  suggestedAction: string;
   receivedAt: string;
+}
+
+/** Gives the user a safe, stage-specific next step without retrying automatically. */
+export function getMcpDiagnosticGuidance(stage: McpDiagnosticStage): string {
+  switch (stage) {
+    case "configuration":
+      return "Review aiChatbox.mcpServers in VS Code Settings and correct the invalid field before reconnecting.";
+    case "transport-connect":
+      return "Check that the local command can start or that the remote endpoint is reachable and uses the required transport security, then inspect the server logs.";
+    case "tool-discovery":
+      return "Check the MCP server logs and confirm it supports the tools/list request; reconnect manually after fixing the server.";
+    case "tool-schema-refresh":
+      return "Check the MCP server logs and tool definitions, then reconnect manually if the updated tool list remains unavailable.";
+    case "unexpected-disconnect":
+      return "Check whether the MCP server exited or the network session ended, then use AI Chatbox: Reconnect MCP Server when ready.";
+  }
+}
+
+/** Adds a typed failure stage while preserving the underlying error for sanitized display. */
+export class McpConnectionError extends Error {
+  readonly stage: McpDiagnosticStage;
+
+  constructor(stage: McpDiagnosticStage, cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Could not connect to the MCP server.");
+    this.name = "McpConnectionError";
+    this.stage = stage;
+  }
 }
 
 interface ConnectedServer {
@@ -159,7 +203,7 @@ export function createMcpToolName(serverName: string, toolName: string): string 
  */
 export class McpManager {
   private readonly connected = new Map<string, ConnectedServer>();
-  private readonly connectionErrors = new Map<string, string>();
+  private readonly connectionDiagnostics = new Map<string, McpConnectionDiagnostic>();
   private readonly recentNotifications: McpNotification[] = [];
   private readonly refreshingTools = new Map<string, Promise<void>>();
   private readonly toolRefreshRequested = new Set<string>();
@@ -203,17 +247,28 @@ export class McpManager {
     }));
   }
 
-  /** Last connection error for diagnostics. */
+  /** Last connection error text, retained for existing status/picker consumers. */
   getConnectionError(serverName: string): string | undefined {
-    return this.connectionErrors.get(serverName);
+    return this.connectionDiagnostics.get(serverName)?.message;
   }
 
-  recordConnectionError(serverName: string, message: string): void {
-    this.connectionErrors.set(serverName, message.slice(0, 2_000));
+  getConnectionDiagnostic(serverName: string): McpConnectionDiagnostic | undefined {
+    const diagnostic = this.connectionDiagnostics.get(serverName);
+    return diagnostic ? { ...diagnostic } : undefined;
+  }
+
+  recordConnectionError(serverName: string, message: string, stage: McpDiagnosticStage = "transport-connect"): void {
+    this.connectionDiagnostics.set(serverName, {
+      serverName,
+      stage,
+      message: message.slice(0, 2_000),
+      suggestedAction: getMcpDiagnosticGuidance(stage),
+      receivedAt: new Date().toISOString()
+    });
   }
 
   clearConnectionError(serverName: string): void {
-    this.connectionErrors.delete(serverName);
+    this.connectionDiagnostics.delete(serverName);
   }
 
   async connect(serverName: string, rawConfig: unknown): Promise<McpToolSummary[]> {
@@ -230,18 +285,20 @@ export class McpManager {
       this.connected.delete(serverName);
       this.refreshingTools.delete(serverName);
       this.toolRefreshRequested.delete(serverName);
-      const message = "MCP transport failed. Its tools have been disabled; review diagnostics and reconnect manually if needed.";
-      this.recordConnectionError(serverName, message);
-      try { this.onConnectionEvent?.({ serverName, state: "error", message, receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
+      const message = "MCP transport failed. Its tools have been disabled until you reconnect.";
+      const stage = "transport-connect" as const;
+      this.recordConnectionError(serverName, message, stage);
+      try { this.onConnectionEvent?.({ serverName, state: "error", stage, message, suggestedAction: getMcpDiagnosticGuidance(stage), receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
     };
     client.onclose = () => {
       if (this.connected.get(serverName)?.client !== client) return;
       this.connected.delete(serverName);
       this.refreshingTools.delete(serverName);
       this.toolRefreshRequested.delete(serverName);
-      const message = "MCP connection closed unexpectedly. Review the configured server and reconnect manually; AI Chatbox will not restart it automatically.";
-      this.recordConnectionError(serverName, message);
-      try { this.onConnectionEvent?.({ serverName, state: "disconnected", message, receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
+      const message = "MCP connection closed unexpectedly. AI Chatbox will not restart it automatically.";
+      const stage = "unexpected-disconnect" as const;
+      this.recordConnectionError(serverName, message, stage);
+      try { this.onConnectionEvent?.({ serverName, state: "disconnected", stage, message, suggestedAction: getMcpDiagnosticGuidance(stage), receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
     };
 
     client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
@@ -258,8 +315,12 @@ export class McpManager {
       try {
         await this.refreshToolSchemas(serverName, client);
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "unknown error";
-        this.recordConnectionError(serverName, `Could not refresh MCP tool schemas: ${detail}`);
+        // Avoid copying arbitrary server/transport error text into diagnostics.
+        this.recordConnectionError(
+          serverName,
+          "Could not refresh MCP tool schemas after a tool-list-change notification.",
+          "tool-schema-refresh"
+        );
       }
     });
     let transport: StdioClientTransport | StreamableHTTPClientTransport;
@@ -285,8 +346,10 @@ export class McpManager {
       });
     }
 
+    let stage: McpDiagnosticStage = "transport-connect";
     try {
       await client.connect(transport);
+      stage = "tool-discovery";
       const tools: McpToolSummary[] = [];
       let cursor: string | undefined;
       for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
@@ -317,7 +380,7 @@ export class McpManager {
       return tools;
     } catch (error) {
       await client.close().catch(() => undefined);
-      throw error instanceof Error ? error : new Error("Could not connect to MCP server.");
+      throw new McpConnectionError(stage, error);
     }
   }
 
