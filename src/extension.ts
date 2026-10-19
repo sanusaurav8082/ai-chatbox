@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ChatView, OPENAI_API_KEY_SECRET } from "./chatView";
-import { McpManager, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
+import { McpManager, McpConnectionError, describeMcpServerEndpoint, parseMcpServerConfig, McpServerConfig } from "./mcpManager";
 import { loadWorkflowFiles, getRunnableWorkflows, MAX_WORKFLOW_FILE_BYTES, WorkflowFile } from "./workflowLoader";
 import { WorkflowRun, completeInstructionStep, decideWorkflowApproval, failInstructionStep, getCurrentWorkflowStep, getWorkflowStepAttempt, retryInstructionStep, startWorkflow } from "./workflowRuntime";
 import { upsertSavedWorkflowRun, validateSavedWorkflowRecords } from "./workflowRunStore";
@@ -68,7 +68,12 @@ async function connectConfiguredMcpServer(
   try {
     config = parseMcpServerConfig(rawConfig);
   } catch (error) {
-    void vscode.window.showErrorMessage(`Invalid MCP configuration: ${error instanceof Error ? error.message : "unknown error"}`);
+    const message = error instanceof Error ? error.message.slice(0, 2_000) : "unknown configuration error";
+    manager.recordConnectionError(serverName, message, "configuration");
+    const diagnostic = manager.getConnectionDiagnostic(serverName);
+    output.appendLine(`[${new Date().toISOString()}] MCP configuration failed for "${serverName}": ${message}`);
+    if (diagnostic) output.appendLine(`Suggested action: ${diagnostic.suggestedAction}`);
+    void vscode.window.showErrorMessage(`Invalid MCP configuration: ${message}`);
     return;
   }
 
@@ -88,10 +93,13 @@ async function connectConfiguredMcpServer(
     output.appendLine(`[${new Date().toISOString()}] Connected to "${serverName}"; discovered ${tools.length} tool(s).`);
     void vscode.window.showInformationMessage(`Connected to MCP server "${serverName}" and discovered ${tools.length} tool(s).`);
   } catch (error) {
+    const stage = error instanceof McpConnectionError ? error.stage : "transport-connect";
     const message = safeErrorMessage(error, rawConfig);
-    manager.recordConnectionError(serverName, message);
-    output.appendLine(`[${new Date().toISOString()}] Connection failed for "${serverName}": ${message}`);
-    void vscode.window.showErrorMessage(`Could not connect to MCP server "${serverName}": ${message}`);
+    manager.recordConnectionError(serverName, message, stage);
+    const diagnostic = manager.getConnectionDiagnostic(serverName);
+    output.appendLine(`[${new Date().toISOString()}] MCP ${stage} failed for "${serverName}": ${message}`);
+    if (diagnostic) output.appendLine(`Suggested action: ${diagnostic.suggestedAction}`);
+    void vscode.window.showErrorMessage(`Could not connect to MCP server "${serverName}" (${stage}): ${message}`);
   }
 }
 
@@ -527,7 +535,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     },
     (event) => {
-      mcpOutput.appendLine(`[${event.receivedAt}] MCP ${event.state} event for "${event.serverName}": ${event.message}`);
+      mcpOutput.appendLine(`[${event.receivedAt}] MCP ${event.state} event for "${event.serverName}" [${event.stage}]: ${event.message}`);
+      mcpOutput.appendLine(`Suggested action: ${event.suggestedAction}`);
       if (event.state === "disconnected") {
         void vscode.window.showWarningMessage(`MCP server "${event.serverName}" disconnected unexpectedly. Review its configuration and reconnect manually.`);
       }
@@ -612,7 +621,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     const selected = await vscode.window.showQuickPick(disconnected.map((name) => {
-      const lastError = mcpManager!.getConnectionError(name);
+      const diagnostic = mcpManager!.getConnectionDiagnostic(name);
+      const lastError = diagnostic?.message;
       let transport = "Invalid configuration";
       try {
         transport = parseMcpServerConfig(configured[name]).transport;
@@ -620,7 +630,9 @@ export function activate(context: vscode.ExtensionContext): void {
       return {
         label: name,
         description: lastError ? "Connection failed — review and reconnect" : "Disconnected — reconnect manually",
-        detail: lastError ? `${transport} · ${lastError}` : transport
+        detail: diagnostic
+          ? `${transport} · ${diagnostic.stage}: ${lastError}\nSuggested action: ${diagnostic.suggestedAction}`
+          : transport
       };
     }), {
       title: "Reconnect MCP Server",
@@ -644,12 +656,14 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         const config = parseMcpServerConfig(configured[name]);
         const isConnected = connected.has(name);
-        const lastError = mcpManager!.getConnectionError(name);
+        const diagnostic = mcpManager!.getConnectionDiagnostic(name);
         const endpoint = describeMcpServerEndpoint(config);
         return {
-          label: `${isConnected ? "Connected" : lastError ? "Needs attention" : "Disconnected"} — ${name}`,
+          label: `${diagnostic ? "Needs attention" : isConnected ? "Connected" : "Disconnected"} — ${name}`,
           description: `${config.transport} · ${toolCounts.get(name) ?? 0} discovered tool(s)`,
-          detail: lastError ? `Last connection error: ${lastError}` : endpoint
+          detail: diagnostic
+            ? `Last failure stage: ${diagnostic.stage}\n${diagnostic.message}\nSuggested action: ${diagnostic.suggestedAction}`
+            : endpoint
         };
       } catch (error) {
         return {

@@ -54,6 +54,7 @@ The roadmap is intentionally incremental. Each milestone should leave the main b
 - [x] Automatically refresh bounded discovered tool schemas after tool-list-change notifications without bypassing per-call approval.
 - [x] Report unexpected MCP transport errors and closures, remove disconnected tools from the active registry, and require deliberate reconnection.
 - [x] Add a dedicated reconnect command that lists only disconnected configured servers and repeats the explicit configuration-review confirmation.
+- [x] Classify MCP failures by stage and show bounded, actionable troubleshooting guidance in status and Output diagnostics.
 - [ ] Add OAuth and optional config importers after canonical configuration is stable.
 - [ ] Verify interactively against a trusted local stdio server and remote Streamable HTTP server.
 
