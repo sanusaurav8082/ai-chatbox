@@ -486,7 +486,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const detail = notification.uri ? ` — ${notification.uri}` : "";
       mcpOutput.appendLine(`[${notification.receivedAt}] MCP notification from "${notification.serverName}": ${notification.kind}${detail}`);
       if (notification.kind === "tools-changed") {
-        mcpOutput.appendLine("Tool list changed. Disconnect and reconnect this server to refresh its discovered tool schemas.");
+        mcpOutput.appendLine("Tool list changed. AI Chatbox is refreshing the discovered schemas; the updated tools are available on subsequent chat turns. Tool calls still require explicit approval.");
       }
     }
   );
