@@ -1,6 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseMcpServerConfig, createMcpToolName, describeMcpServerEndpoint } = require("../dist/mcpManager.js");
+const {
+  parseMcpServerConfig,
+  createMcpToolName,
+  describeMcpServerEndpoint,
+  getMcpDiagnosticGuidance,
+  McpConnectionError
+} = require("../dist/mcpManager.js");
 
 test("accepts a valid stdio MCP server configuration", () => {
   assert.deepEqual(parseMcpServerConfig({
@@ -63,4 +69,19 @@ test("bounds long provider tool names to 80 characters", () => {
   const name = createMcpToolName("s".repeat(48), "t".repeat(200));
   assert.ok(name.length <= 80);
   assert.match(name, /_[a-f0-9]{8}$/);
+});
+
+test("MCP diagnostics provide stage-specific troubleshooting guidance", () => {
+  assert.match(getMcpDiagnosticGuidance("configuration"), /VS Code Settings/);
+  assert.match(getMcpDiagnosticGuidance("transport-connect"), /endpoint is reachable/);
+  assert.match(getMcpDiagnosticGuidance("tool-discovery"), /tools\/list/);
+  assert.match(getMcpDiagnosticGuidance("tool-schema-refresh"), /tool definitions/);
+  assert.match(getMcpDiagnosticGuidance("unexpected-disconnect"), /Reconnect MCP Server/);
+});
+
+test("McpConnectionError preserves the failure stage", () => {
+  const error = new McpConnectionError("tool-discovery", new Error("server did not respond"));
+  assert.equal(error.name, "McpConnectionError");
+  assert.equal(error.stage, "tool-discovery");
+  assert.equal(error.message, "server did not respond");
 });
