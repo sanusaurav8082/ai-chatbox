@@ -469,6 +469,7 @@ async function run() {
     "aiChatbox.setOpenAiApiKey",
     "aiChatbox.clearOpenAiApiKey",
     "aiChatbox.connectMcpServer",
+    "aiChatbox.reconnectMcpServer",
     "aiChatbox.disconnectMcpServer",
     "aiChatbox.showMcpServerStatus",
     "aiChatbox.showMcpDiagnostics",

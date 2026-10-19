@@ -29,6 +29,7 @@
     "onCommand:aiChatbox.setOpenAiApiKey",
     "onCommand:aiChatbox.clearOpenAiApiKey",
     "onCommand:aiChatbox.connectMcpServer",
+    "onCommand:aiChatbox.reconnectMcpServer",
     "onCommand:aiChatbox.disconnectMcpServer",
     "onCommand:aiChatbox.setMcpServerToken",
     "onCommand:aiChatbox.clearMcpServerToken",
@@ -61,6 +62,10 @@
       {
         "command": "aiChatbox.connectMcpServer",
         "title": "AI Chatbox: Connect MCP Server"
+      },
+      {
+        "command": "aiChatbox.reconnectMcpServer",
+        "title": "AI Chatbox: Reconnect MCP Server"
       },
       {
         "command": "aiChatbox.disconnectMcpServer",
