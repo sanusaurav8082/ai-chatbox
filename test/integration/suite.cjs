@@ -330,7 +330,7 @@ async function testMcpUnexpectedDisconnect() {
   const { McpManager } = require("../../dist/mcpManager.js");
   let resolveEvent;
   const eventPromise = new Promise((resolve) => { resolveEvent = resolve; });
-  const manager = new McpManager(async () => undefined, (event) => {
+  const manager = new McpManager(async () => undefined, undefined, (event) => {
     if (event.state === "disconnected") resolveEvent(event);
   });
   await withMockMcpServer(async (mcpUrl, _getCallCount, _sendResourceUpdated, _addDynamicTool, closeServer) => {
