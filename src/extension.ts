@@ -659,7 +659,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const diagnostic = mcpManager!.getConnectionDiagnostic(name);
         const endpoint = describeMcpServerEndpoint(config);
         return {
-          label: `${isConnected ? "Connected" : diagnostic ? "Needs attention" : "Disconnected"} — ${name}`,
+          label: `${diagnostic ? "Needs attention" : isConnected ? "Connected" : "Disconnected"} — ${name}`,
           description: `${config.transport} · ${toolCounts.get(name) ?? 0} discovered tool(s)`,
           detail: diagnostic
             ? `Last failure stage: ${diagnostic.stage}\n${diagnostic.message}\nSuggested action: ${diagnostic.suggestedAction}`
