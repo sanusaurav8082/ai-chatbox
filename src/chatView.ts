@@ -593,7 +593,7 @@ function renderWorkflowProgress(message) {
   }
   card._title.textContent = message.workflowName + " · v" + message.version;
   const current = message.stepTitle ? ("Step " + Math.min(message.stepIndex + 1, message.stepCount) + " of " + message.stepCount + ": " + message.stepTitle) : "";
-  card._detail.textContent = [message.status, current, message.detail || ""].filter(Boolean).join("\n");
+  card._detail.textContent = [message.status, current, message.detail || ""].filter(Boolean).join("\\n");
   messages.scrollTop = messages.scrollHeight;
   announce("Workflow " + message.workflowName + ": " + message.status + (current ? ". " + current : ""));
 }
@@ -725,7 +725,7 @@ window.addEventListener("message", (event) => {
     const errorItem = activeAssistant ?? addMessage("assistant", "");
     errorItem.classList.add("error");
     errorItem.setAttribute("role", "alert");
-    errorItem.textContent += (errorItem.textContent ? "\n\n" : "") + "Error: " + message.text;
+    errorItem.textContent += (errorItem.textContent ? "\\n\\n" : "") + "Error: " + message.text;
     announce("Request failed: " + message.text);
   } else if (message.type === "workflowProgress" && typeof message.runId === "string" && typeof message.workflowName === "string") renderWorkflowProgress(message);
   else if (message.type === "mcpContextStatus") {
