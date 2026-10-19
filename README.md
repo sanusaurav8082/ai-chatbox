@@ -2,7 +2,7 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 25 — explicit MCP context attachments.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, and review connection diagnostics. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
+> **Current status: Phase 30 — MCP connection diagnostics.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, review stage-aware troubleshooting guidance, and manually reconnect after failures. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
@@ -15,7 +15,7 @@ A learning-first, extensible AI chatbox and coding agent for Visual Studio Code.
 - Read-only workspace file listing tool with a 100-path limit
 - MCP client for stdio and Streamable HTTP, with explicit connection approval
 - MCP server status command showing connection state, transport, discovered tool count, and recent connection errors
-- Dedicated `AI Chatbox MCP` Output channel for connection and disconnection diagnostics
+- Dedicated `AI Chatbox MCP` Output channel for stage-aware connection/disconnection diagnostics with bounded, actionable troubleshooting guidance
 - MCP tool discovery, JSON Schema validation, and per-call approval through the same agent runtime
 - Browse and preview MCP resources and prompt messages locally; content is bounded and is not automatically sent to the model
 - Explicitly attach a reviewed MCP resource or prompt to the next chat message after a confirmation step; attached content is bounded, labeled untrusted, and not saved as conversation history
