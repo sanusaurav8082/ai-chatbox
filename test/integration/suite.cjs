@@ -274,7 +274,8 @@ async function withMockMcpServer(callback) {
         async ({ value }) => ({ content: [{ type: "text", text: `dynamic:${value}` }] })
       );
       await mcpServer.server.sendToolListChanged();
-    });
+    },
+    async () => mcpServer.close());
   } finally {
     await mcpServer.close().catch(() => undefined);
     await new Promise((resolve) => server.close(resolve));
@@ -325,6 +326,27 @@ async function testMcpNotifications() {
   await manager.disconnectAll();
 }
 
+async function testMcpUnexpectedDisconnect() {
+  const { McpManager } = require("../../dist/mcpManager.js");
+  let resolveEvent;
+  const eventPromise = new Promise((resolve) => { resolveEvent = resolve; });
+  const manager = new McpManager(async () => undefined, undefined, resolveEvent);
+  await withMockMcpServer(async (mcpUrl, _getCallCount, _sendResourceUpdated, _addDynamicTool, closeServer) => {
+    await manager.connect("fixture", { transport: "streamable-http", url: mcpUrl });
+    assert.deepEqual(manager.getConnectedNames(), ["fixture"]);
+    await closeServer();
+    const event = await Promise.race([
+      eventPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for MCP disconnect event")), 3_000))
+    ]);
+    assert.equal(event.serverName, "fixture");
+    assert.equal(event.state, "disconnected");
+    assert.match(event.message, /reconnect manually/i);
+    assert.deepEqual(manager.getConnectedNames(), [], "Disconnected server tools must be removed from the active registry.");
+    assert.match(manager.getConnectionError("fixture"), /closed unexpectedly/i);
+  });
+  await manager.disconnectAll();
+}
 async function testMcpAgentToolApproval(decision) {
   const { McpManager } = require("../../dist/mcpManager.js");
   let requestCount = 0;
@@ -477,12 +499,13 @@ async function run() {
   await testMcpContextForwarding();
   await testMcpNotifications();
   await testMcpToolSchemaRefresh();
+  await testMcpUnexpectedDisconnect();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");
   await testMcpAgentToolApproval("deny");
 
-  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, MCP schema-refresh, and MCP integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, MCP schema-refresh, MCP connection lifecycle, and MCP integration checks passed.");
 }
 
 module.exports = { run };
