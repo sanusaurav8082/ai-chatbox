@@ -58,6 +58,43 @@ async function chooseConnectedMcpServer(manager: McpManager, title: string): Pro
   return vscode.window.showQuickPick(names, { title, placeHolder: "Only currently connected MCP servers are listed" });
 }
 
+async function connectConfiguredMcpServer(
+  serverName: string,
+  rawConfig: unknown,
+  manager: McpManager,
+  output: vscode.OutputChannel
+): Promise<void> {
+  let config: McpServerConfig;
+  try {
+    config = parseMcpServerConfig(rawConfig);
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Invalid MCP configuration: ${error instanceof Error ? error.message : "unknown error"}`);
+    return;
+  }
+
+  const detail = describeServer(config);
+  const choice = await vscode.window.showWarningMessage(
+    `Connecting starts a local process or contacts a remote MCP server. Its tools can request actions and may access data available to that server. Review the configuration before proceeding.\\n\\n${detail}`,
+    { modal: true, detail: "Connection does not grant tool execution permission. Every tool call will still require a separate approval in the chat." },
+    "Connect",
+    "Cancel"
+  );
+  if (choice !== "Connect") return;
+
+  output.appendLine(`[${new Date().toISOString()}] Connecting to MCP server "${serverName}" (${config.transport}).`);
+  try {
+    const tools = await manager.connect(serverName, rawConfig);
+    manager.clearConnectionError(serverName);
+    output.appendLine(`[${new Date().toISOString()}] Connected to "${serverName}"; discovered ${tools.length} tool(s).`);
+    void vscode.window.showInformationMessage(`Connected to MCP server "${serverName}" and discovered ${tools.length} tool(s).`);
+  } catch (error) {
+    const message = safeErrorMessage(error, rawConfig);
+    manager.recordConnectionError(serverName, message);
+    output.appendLine(`[${new Date().toISOString()}] Connection failed for "${serverName}": ${message}`);
+    void vscode.window.showErrorMessage(`Could not connect to MCP server "${serverName}": ${message}`);
+  }
+}
+
 async function browseMcpResources(manager: McpManager, output: vscode.OutputChannel): Promise<void> {
   const serverName = await chooseConnectedMcpServer(manager, "Browse MCP Resources");
   if (!serverName) return;
@@ -548,41 +585,49 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showWarningMessage("No MCP servers configured. Add named entries to aiChatbox.mcpServers in VS Code Settings.");
       return;
     }
-    const selected = await vscode.window.showQuickPick(names.map((name) => ({ label: name, description: mcpManager!.getConnectedNames().includes(name) ? "Connected" : "Not connected" })), {
+    const connected = new Set(mcpManager!.getConnectedNames());
+    const selected = await vscode.window.showQuickPick(names.map((name) => ({
+      label: name,
+      description: connected.has(name) ? "Connected" : mcpManager!.getConnectionError(name) ? "Connection failed" : "Not connected"
+    })), {
       title: "Choose an MCP server to connect",
       placeHolder: "Only configured servers are listed"
     });
     if (!selected) return;
+    await connectConfiguredMcpServer(selected.label, configured[selected.label], mcpManager!, mcpOutput);
+  });
 
-    let config: McpServerConfig;
-    try {
-      config = parseMcpServerConfig(configured[selected.label]);
-    } catch (error) {
-      void vscode.window.showErrorMessage(`Invalid MCP configuration: ${error instanceof Error ? error.message : "unknown error"}`);
+  const reconnectMcpServer = vscode.commands.registerCommand("aiChatbox.reconnectMcpServer", async () => {
+    const configured = configuredServers();
+    const names = Object.keys(configured).sort();
+    if (!names.length) {
+      void vscode.window.showWarningMessage("No MCP servers configured. Add named entries to aiChatbox.mcpServers in VS Code Settings.");
+      return;
+    }
+    const connected = new Set(mcpManager!.getConnectedNames());
+    const disconnected = names.filter((name) => !connected.has(name));
+    if (!disconnected.length) {
+      void vscode.window.showInformationMessage("All configured MCP servers are already connected.");
       return;
     }
 
-    const detail = describeServer(config);
-    const choice = await vscode.window.showWarningMessage(
-      `Connecting starts a local process or contacts a remote MCP server. Its tools can request actions and may access data available to that server. Review the configuration before proceeding.\n\n${detail}`,
-      { modal: true, detail: "Connection does not grant tool execution permission. Every tool call will still require a separate approval in the chat." },
-      "Connect",
-      "Cancel"
-    );
-    if (choice !== "Connect") return;
-
-    mcpOutput.appendLine(`[${new Date().toISOString()}] Connecting to MCP server "${selected.label}" (${config.transport}).`);
-    try {
-      const tools = await mcpManager!.connect(selected.label, configured[selected.label]);
-      mcpManager!.clearConnectionError(selected.label);
-      mcpOutput.appendLine(`[${new Date().toISOString()}] Connected to "${selected.label}"; discovered ${tools.length} tool(s).`);
-      void vscode.window.showInformationMessage(`Connected to MCP server "${selected.label}" and discovered ${tools.length} tool(s).`);
-    } catch (error) {
-      const message = safeErrorMessage(error, configured[selected.label]);
-      mcpManager!.recordConnectionError(selected.label, message);
-      mcpOutput.appendLine(`[${new Date().toISOString()}] Connection failed for "${selected.label}": ${message}`);
-      void vscode.window.showErrorMessage(`Could not connect to MCP server "${selected.label}": ${message}`);
-    }
+    const selected = await vscode.window.showQuickPick(disconnected.map((name) => {
+      const lastError = mcpManager!.getConnectionError(name);
+      let transport = "Invalid configuration";
+      try {
+        transport = parseMcpServerConfig(configured[name]).transport;
+      } catch { /* Keep invalid configurations visible so the user can inspect/fix them. */ }
+      return {
+        label: name,
+        description: lastError ? "Connection failed — review and reconnect" : "Disconnected — reconnect manually",
+        detail: lastError ? `${transport} · ${lastError}` : transport
+      };
+    }), {
+      title: "Reconnect MCP Server",
+      placeHolder: "Select a disconnected server; review its configuration before connecting"
+    });
+    if (!selected) return;
+    await connectConfiguredMcpServer(selected.label, configured[selected.label], mcpManager!, mcpOutput);
   });
 
   const showMcpStatus = vscode.commands.registerCommand("aiChatbox.showMcpServerStatus", async () => {
@@ -711,7 +756,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     openChat, clearConversation, setOpenAiApiKey, clearOpenAiApiKey,
-    connectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
+    connectMcpServer, reconnectMcpServer, disconnectMcpServer, setMcpToken, clearMcpToken,
     showMcpStatus, showMcpOutput, browseMcpResourcesCommand, browseMcpPromptsCommand,
     attachMcpResourceCommand, attachMcpPromptCommand, clearMcpContextCommand, runWorkflow, resumeWorkflow, showWorkflowDiagnostics
   );
