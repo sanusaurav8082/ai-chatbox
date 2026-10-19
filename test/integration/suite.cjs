@@ -331,21 +331,26 @@ async function testMcpUnexpectedDisconnect() {
   let resolveEvent;
   const eventPromise = new Promise((resolve) => { resolveEvent = resolve; });
   const manager = new McpManager(async () => undefined, undefined, (event) => {
-    if (event.state === "disconnected") resolveEvent(event);
+    resolveEvent(event);
   });
   await withMockMcpServer(async (mcpUrl, _getCallCount, _sendResourceUpdated, _addDynamicTool, closeServer) => {
     await manager.connect("fixture", { transport: "streamable-http", url: mcpUrl });
     assert.deepEqual(manager.getConnectedNames(), ["fixture"]);
     await closeServer();
+
+    // Streamable HTTP is request-driven: stopping an idle HTTP server does not
+    // necessarily notify the client. Make a request to observe the transport
+    // failure, then assert the server's tools are removed from the registry.
+    await assert.rejects(manager.listResources("fixture"));
     const event = await Promise.race([
       eventPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for MCP disconnect event")), 3_000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for MCP transport failure event")), 3_000))
     ]);
     assert.equal(event.serverName, "fixture");
-    assert.equal(event.state, "disconnected");
-    assert.match(event.message, /reconnect manually/i);
-    assert.deepEqual(manager.getConnectedNames(), [], "Disconnected server tools must be removed from the active registry.");
-    assert.match(manager.getConnectionError("fixture"), /closed unexpectedly/i);
+    assert.equal(event.state, "error");
+    assert.match(event.message, /tools have been disabled/i);
+    assert.deepEqual(manager.getConnectedNames(), [], "Unreachable server tools must be removed from the active registry.");
+    assert.match(manager.getConnectionError("fixture"), /transport failed/i);
   });
   await manager.disconnectAll();
 }
