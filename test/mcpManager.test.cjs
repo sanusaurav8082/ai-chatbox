@@ -74,6 +74,7 @@ test("bounds long provider tool names to 80 characters", () => {
 test("MCP diagnostics provide stage-specific troubleshooting guidance", () => {
   assert.match(getMcpDiagnosticGuidance("configuration"), /VS Code Settings/);
   assert.match(getMcpDiagnosticGuidance("transport-connect"), /endpoint is reachable/);
+  assert.match(getMcpDiagnosticGuidance("transport-error"), /network session/);
   assert.match(getMcpDiagnosticGuidance("tool-discovery"), /tools\/list/);
   assert.match(getMcpDiagnosticGuidance("tool-schema-refresh"), /tool definitions/);
   assert.match(getMcpDiagnosticGuidance("unexpected-disconnect"), /Reconnect MCP Server/);
