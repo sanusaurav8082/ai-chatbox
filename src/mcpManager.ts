@@ -225,7 +225,12 @@ export class McpManager {
     const client = new Client({ name: "ai-chatbox", version: "0.5.0" });
     client.onerror = () => {
       if (this.connected.get(serverName)?.client !== client) return;
-      const message = "MCP transport reported an error. The connection may be unavailable; inspect diagnostics and reconnect manually if needed.";
+      // A transport error means the server can no longer be trusted as an
+      // executable tool source. Remove its tools until the user reconnects.
+      this.connected.delete(serverName);
+      this.refreshingTools.delete(serverName);
+      this.toolRefreshRequested.delete(serverName);
+      const message = "MCP transport failed. Its tools have been disabled; review diagnostics and reconnect manually if needed.";
       this.recordConnectionError(serverName, message);
       try { this.onConnectionEvent?.({ serverName, state: "error", message, receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
     };
