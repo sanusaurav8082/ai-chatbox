@@ -74,7 +74,7 @@ async function connectConfiguredMcpServer(
 
   const detail = describeServer(config);
   const choice = await vscode.window.showWarningMessage(
-    `Connecting starts a local process or contacts a remote MCP server. Its tools can request actions and may access data available to that server. Review the configuration before proceeding.\\n\\n${detail}`,
+    `Connecting starts a local process or contacts a remote MCP server. Its tools can request actions and may access data available to that server. Review the configuration before proceeding.\n\n${detail}`,
     { modal: true, detail: "Connection does not grant tool execution permission. Every tool call will still require a separate approval in the chat." },
     "Connect",
     "Cancel"
@@ -647,7 +647,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const lastError = mcpManager!.getConnectionError(name);
         const endpoint = describeMcpServerEndpoint(config);
         return {
-          label: `${isConnected ? "Connected" : "Disconnected"} — ${name}`,
+          label: `${isConnected ? "Connected" : lastError ? "Needs attention" : "Disconnected"} — ${name}`,
           description: `${config.transport} · ${toolCounts.get(name) ?? 0} discovered tool(s)`,
           detail: lastError ? `Last connection error: ${lastError}` : endpoint
         };
