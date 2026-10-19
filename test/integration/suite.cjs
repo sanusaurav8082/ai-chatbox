@@ -274,7 +274,8 @@ async function withMockMcpServer(callback) {
         async ({ value }) => ({ content: [{ type: "text", text: `dynamic:${value}` }] })
       );
       await mcpServer.server.sendToolListChanged();
-    });
+    },
+    async () => mcpServer.close());
   } finally {
     await mcpServer.close().catch(() => undefined);
     await new Promise((resolve) => server.close(resolve));
@@ -325,6 +326,34 @@ async function testMcpNotifications() {
   await manager.disconnectAll();
 }
 
+async function testMcpUnexpectedDisconnect() {
+  const { McpManager } = require("../../dist/mcpManager.js");
+  let resolveEvent;
+  const eventPromise = new Promise((resolve) => { resolveEvent = resolve; });
+  const manager = new McpManager(async () => undefined, undefined, (event) => {
+    resolveEvent(event);
+  });
+  await withMockMcpServer(async (mcpUrl, _getCallCount, _sendResourceUpdated, _addDynamicTool, closeServer) => {
+    await manager.connect("fixture", { transport: "streamable-http", url: mcpUrl });
+    assert.deepEqual(manager.getConnectedNames(), ["fixture"]);
+    await closeServer();
+
+    // Streamable HTTP is request-driven: stopping an idle HTTP server does not
+    // necessarily notify the client. Make a request to observe the transport
+    // failure, then assert the server's tools are removed from the registry.
+    await assert.rejects(manager.listResources("fixture"));
+    const event = await Promise.race([
+      eventPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for MCP transport failure event")), 3_000))
+    ]);
+    assert.equal(event.serverName, "fixture");
+    assert.equal(event.state, "error");
+    assert.match(event.message, /tools have been disabled/i);
+    assert.deepEqual(manager.getConnectedNames(), [], "Unreachable server tools must be removed from the active registry.");
+    assert.match(manager.getConnectionError("fixture"), /transport failed/i);
+  });
+  await manager.disconnectAll();
+}
 async function testMcpAgentToolApproval(decision) {
   const { McpManager } = require("../../dist/mcpManager.js");
   let requestCount = 0;
@@ -477,12 +506,13 @@ async function run() {
   await testMcpContextForwarding();
   await testMcpNotifications();
   await testMcpToolSchemaRefresh();
+  await testMcpUnexpectedDisconnect();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");
   await testMcpAgentToolApproval("deny");
 
-  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, MCP schema-refresh, and MCP integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, MCP schema-refresh, MCP connection lifecycle, and MCP integration checks passed.");
 }
 
 module.exports = { run };

@@ -488,6 +488,12 @@ export function activate(context: vscode.ExtensionContext): void {
       if (notification.kind === "tools-changed") {
         mcpOutput.appendLine("Tool list changed. AI Chatbox is refreshing the discovered schemas; the updated tools are available on subsequent chat turns. Tool calls still require explicit approval.");
       }
+    },
+    (event) => {
+      mcpOutput.appendLine(`[${event.receivedAt}] MCP ${event.state} event for "${event.serverName}": ${event.message}`);
+      if (event.state === "disconnected") {
+        void vscode.window.showWarningMessage(`MCP server "${event.serverName}" disconnected unexpectedly. Review its configuration and reconnect manually.`);
+      }
     }
   );
   const workflowOutput = vscode.window.createOutputChannel("AI Chatbox Workflows");

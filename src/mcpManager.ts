@@ -54,6 +54,13 @@ export interface McpNotification {
   receivedAt: string;
 }
 
+export interface McpConnectionEvent {
+  serverName: string;
+  state: "disconnected" | "error";
+  message: string;
+  receivedAt: string;
+}
+
 interface ConnectedServer {
   name: string;
   config: McpServerConfig;
@@ -159,7 +166,8 @@ export class McpManager {
 
   constructor(
     private readonly getBearerToken: (serverName: string) => Promise<string | undefined>,
-    private readonly onNotification?: (notification: McpNotification) => void
+    private readonly onNotification?: (notification: McpNotification) => void,
+    private readonly onConnectionEvent?: (event: McpConnectionEvent) => void
   ) {}
 
   getRecentNotifications(): McpNotification[] {
@@ -215,6 +223,27 @@ export class McpManager {
     if (this.connected.has(serverName)) throw new Error(`MCP server "${serverName}" is already connected.`);
     const config = parseMcpServerConfig(rawConfig);
     const client = new Client({ name: "ai-chatbox", version: "0.5.0" });
+    client.onerror = () => {
+      if (this.connected.get(serverName)?.client !== client) return;
+      // A transport error means the server can no longer be trusted as an
+      // executable tool source. Remove its tools until the user reconnects.
+      this.connected.delete(serverName);
+      this.refreshingTools.delete(serverName);
+      this.toolRefreshRequested.delete(serverName);
+      const message = "MCP transport failed. Its tools have been disabled; review diagnostics and reconnect manually if needed.";
+      this.recordConnectionError(serverName, message);
+      try { this.onConnectionEvent?.({ serverName, state: "error", message, receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
+    };
+    client.onclose = () => {
+      if (this.connected.get(serverName)?.client !== client) return;
+      this.connected.delete(serverName);
+      this.refreshingTools.delete(serverName);
+      this.toolRefreshRequested.delete(serverName);
+      const message = "MCP connection closed unexpectedly. Review the configured server and reconnect manually; AI Chatbox will not restart it automatically.";
+      this.recordConnectionError(serverName, message);
+      try { this.onConnectionEvent?.({ serverName, state: "disconnected", message, receivedAt: new Date().toISOString() }); } catch { /* Diagnostics must not disrupt the MCP connection. */ }
+    };
+
     client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
       this.recordNotification(serverName, "resource-updated", notification.params.uri);
     });
