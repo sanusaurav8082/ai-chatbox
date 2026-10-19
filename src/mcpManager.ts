@@ -154,6 +154,8 @@ export class McpManager {
   private readonly connected = new Map<string, ConnectedServer>();
   private readonly connectionErrors = new Map<string, string>();
   private readonly recentNotifications: McpNotification[] = [];
+  private readonly refreshingTools = new Map<string, Promise<void>>();
+  private readonly toolRefreshRequested = new Set<string>();
 
   constructor(
     private readonly getBearerToken: (serverName: string) => Promise<string | undefined>,
@@ -224,6 +226,12 @@ export class McpManager {
     });
     client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
       this.recordNotification(serverName, "tools-changed");
+      try {
+        await this.refreshToolSchemas(serverName, client);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "unknown error";
+        this.recordConnectionError(serverName, `Could not refresh MCP tool schemas: ${detail}`);
+      }
     });
     let transport: StdioClientTransport | StreamableHTTPClientTransport;
 
@@ -388,6 +396,57 @@ export class McpManager {
       return { role: String(message.role).slice(0, 40), text: bounded };
     });
   }
+
+  /** Refreshes discovered schemas after an MCP tool-list-change notification. */
+  private async refreshToolSchemas(serverName: string, client: Client): Promise<void> {
+    this.toolRefreshRequested.add(serverName);
+    const existing = this.refreshingTools.get(serverName);
+    if (existing) return existing;
+
+    const refresh = (async () => {
+      while (this.toolRefreshRequested.delete(serverName)) {
+        const server = this.connected.get(serverName);
+        if (!server || server.client !== client) return;
+        const tools: McpToolSummary[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
+          const result = await client.listTools(cursor ? { cursor } : undefined);
+          for (const tool of result.tools) {
+            if (typeof tool.name !== "string" || !tool.name || tool.name.length > 200) {
+              throw new Error("MCP server returned a tool name that is empty or longer than 200 characters.");
+            }
+            tools.push({
+              name: tool.name,
+              description: (tool.description ?? "").slice(0, 4_000),
+              inputSchema: isRecord(tool.inputSchema) ? tool.inputSchema : { type: "object", properties: {} }
+            });
+            if (tools.length > MAX_MCP_ITEMS) throw new Error("MCP server exposes more than 500 tools; refusing to register them.");
+          }
+          cursor = result.nextCursor;
+          if (!cursor) break;
+          if (page === MAX_TOOL_PAGES - 1) throw new Error("MCP server tool listing exceeded the pagination limit.");
+        }
+        const seen = new Set<string>();
+        for (const tool of tools) {
+          const name = createMcpToolName(serverName, tool.name);
+          if (seen.has(name)) throw new Error(`MCP tool names collide after normalization: ${name}`);
+          seen.add(name);
+        }
+        const current = this.connected.get(serverName);
+        if (!current || current.client !== client) return;
+        current.tools = tools;
+        this.clearConnectionError(serverName);
+      }
+    })();
+    this.refreshingTools.set(serverName, refresh);
+    try {
+      await refresh;
+    } finally {
+      if (this.refreshingTools.get(serverName) === refresh) this.refreshingTools.delete(serverName);
+      this.toolRefreshRequested.delete(serverName);
+    }
+  }
+
 
   private requireConnectedServer(serverName: string): ConnectedServer {
     const server = this.connected.get(serverName);
