@@ -179,7 +179,7 @@ Read [the architecture](docs/ARCHITECTURE.md), [extension interfaces and compati
 
 ## Planned work
 
-1. Package and install a VSIX, plus improve connection/approval presentation
+1. Improve MCP connection health reporting and deliberate reconnection; manually verify the packaged VSIX
 2. Conversation persistence and richer settings/approval UX
 3. Richer knowledge source providers and optional semantic/vector retrieval
 
