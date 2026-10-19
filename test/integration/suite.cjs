@@ -265,13 +265,41 @@ async function withMockMcpServer(callback) {
   });
   const address = server.address();
   try {
-    await callback(`http://127.0.0.1:${address.port}/mcp`, () => toolCallCount, async (uri) => mcpServer.server.sendResourceUpdated({ uri }));
+    await callback(`http://127.0.0.1:${address.port}/mcp`, () => toolCallCount, async (uri) => mcpServer.server.sendResourceUpdated({ uri }),
+    async () => {
+      mcpServer.tool(
+        "fixture_dynamic",
+        "A tool added after the client connected.",
+        { value: z.string() },
+        async ({ value }) => ({ content: [{ type: "text", text: `dynamic:${value}` }] })
+      );
+      await mcpServer.server.sendToolListChanged();
+    });
   } finally {
     await mcpServer.close().catch(() => undefined);
     await new Promise((resolve) => server.close(resolve));
   }
 }
 
+async function testMcpToolSchemaRefresh() {
+  const { McpManager } = require("../../dist/mcpManager.js");
+  const manager = new McpManager(async () => undefined);
+  await withMockMcpServer(async (mcpUrl, _getCallCount, _sendResourceUpdated, addDynamicTool) => {
+    await manager.connect("fixture", { transport: "streamable-http", url: mcpUrl });
+    assert.equal(manager.getToolSummaries()[0].tools.length, 1);
+    await addDynamicTool();
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline && manager.getToolSummaries()[0].tools.length !== 2) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const summaries = manager.getToolSummaries()[0].tools;
+    assert.equal(summaries.length, 2, "Expected a tool-list-change notification to refresh discovered schemas.");
+    assert.ok(summaries.some((tool) => tool.name === "fixture_dynamic"));
+    assert.ok(manager.getAgentTools().some((tool) => tool.name === "mcp_fixture_fixture_dynamic"),
+      "Refreshed tools should be available to the agent on subsequent turns.");
+  });
+  await manager.disconnectAll();
+}
 async function testMcpNotifications() {
   const { McpManager } = require("../../dist/mcpManager.js");
   const received = [];
@@ -448,12 +476,13 @@ async function run() {
   await testAgentCancellation();
   await testMcpContextForwarding();
   await testMcpNotifications();
+  await testMcpToolSchemaRefresh();
   await testAgentProviderToolApproval("allow");
   await testAgentProviderToolApproval("deny");
   await testMcpAgentToolApproval("allow");
   await testMcpAgentToolApproval("deny");
 
-  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, and MCP integration checks passed.");
+  console.log("AI Chatbox VS Code, streaming, cancellation, agent/provider, MCP notification, MCP schema-refresh, and MCP integration checks passed.");
 }
 
 module.exports = { run };
