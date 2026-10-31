@@ -1,0 +1,26 @@
+{
+  "id": "release.deploy",
+  "version": "1.0.0",
+  "name": "Release deployment checklist",
+  "description": "Review a release, confirm approval, and verify the result.",
+  "steps": [
+    {
+      "id": "review",
+      "type": "instruction",
+      "title": "Review changes",
+      "instructions": "Review the change summary, test results, and rollback plan. Confirm that the release is ready."
+    },
+    {
+      "id": "release-approval",
+      "type": "approval",
+      "title": "Approve release",
+      "prompt": "Do you explicitly approve proceeding with this release?"
+    },
+    {
+      "id": "verify",
+      "type": "instruction",
+      "title": "Verify release",
+      "instructions": "After the release is performed by your normal deployment process, inspect health indicators and record the result."
+    }
+  ]
+}

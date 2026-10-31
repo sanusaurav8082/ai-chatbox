@@ -1,0 +1,125 @@
+# Workflows and SOPs
+
+The workflow runtime is the foundation for repeatable, versioned procedures. Unlike a skill, which contributes optional guidance to a prompt, a workflow defines an ordered checklist with explicit human approval checkpoints.
+
+## Manifest format
+
+Workflow definitions are JSON data. Each manifest contains:
+
+- `id`: stable lowercase identifier (for example, `release.deploy`).
+- `version`: semantic version such as `1.2.0`.
+- `name` and `description`: human-readable metadata.
+- `steps`: an ordered list of instruction and approval steps.
+- Optional `enabled`: defaults to enabled when registered; disabled workflows cannot be started.
+
+Example:
+
+```json
+{
+  "id": "release.deploy",
+  "version": "1.2.0",
+  "name": "Release deployment",
+  "description": "A staged release checklist with explicit approval checkpoints.",
+  "steps": [
+    {
+      "id": "inspect",
+      "type": "instruction",
+      "title": "Inspect changes",
+      "instructions": "Review the change summary, tests, and rollback plan.",
+      "retryPolicy": { "maxAttempts": 2 }
+    },
+    {
+      "id": "release-approval",
+      "type": "approval",
+      "title": "Approve release",
+      "prompt": "Confirm the release and rollback plan before proceeding."
+    },
+    {
+      "id": "verify",
+      "type": "instruction",
+      "title": "Verify release",
+      "instructions": "Check deployment health and report the result."
+    }
+  ]
+}
+```
+
+## Runtime contract
+
+The pure TypeScript runtime validates manifests and bounds the registry to 100 workflows, 50 steps per workflow, 8,000 characters per step, and 32,000 characters of step text per workflow. Step IDs must be unique within a workflow. The registry returns copies rather than references to its internal data.
+
+A run snapshots the selected workflow version at start, so later registry edits do not mutate an in-progress run. The state machine supports:
+
+- `running`: the current step is an instruction step.
+- `awaiting-approval`: the current step is an approval checkpoint; progression stops until an explicit decision is supplied.
+- `completed`: every step has completed or been approved.
+- `cancelled`: an approval checkpoint was denied or an instruction exhausted its retry budget.
+
+Instruction steps advance only when the host calls `completeInstructionStep` for the exact current step. Approval checkpoints advance only when the host calls `decideWorkflowApproval` with an explicit approval. Denial cancels the run. Transitions return new state and do not mutate the previous run.
+
+## Security boundary and current scope
+
+Workflow files are definitions, not executable code. The runtime supports instruction and approval steps only; it does not execute shell commands, call tools, or evaluate expressions. Conditional branches are declarative prior-outcome comparisons. Retry policies apply only to user-managed instruction checklist steps and do not automatically rerun commands, tools, or code.
+
+**A workflow approval is not a blanket permission to use tools.** Any future tool action must still pass through the agent runtime's existing per-invocation permission service and approval UI. Workflow content is untrusted user-provided guidance and must not override system/developer instructions or security policy. Do not automatically trust workflow files from repositories you do not control.
+
+
+## Loading and running workflows
+
+Workflow loading is opt-in. Set `aiChatbox.workflowsEnabled` to `true`, then run **AI Chatbox: Run Workflow** from the VS Code Command Palette.
+
+The loader reads JSON files from:
+
+- Each workspace's `.ai-chatbox/workflows/*.json` directory.
+- The AI Chatbox extension global-storage `workflows/*.json` directory.
+
+User-storage files are loaded before workspace files; a workspace workflow with the same stable ID takes precedence. The loader considers at most 100 files and 20,000 bytes per file. Invalid, unreadable, oversized, or malformed manifests are skipped and recorded in **AI Chatbox Workflows** output. Disabled workflows are not offered for execution.
+
+The command uses native VS Code dialogs to show each instruction and asks the user to explicitly mark it complete. Approval steps use a modal confirmation and stop the workflow on denial. Dismissing a dialog stops the current run. Workflow run snapshots are persisted in extension global state (up to 10 runs and 200 KB total), including the exact workflow version, current step index, status, and bounded outcomes. Reopen the chat to see live progress while a run is active; the **AI Chatbox: Resume Workflow** command lists interrupted runs and resumes from their saved snapshot, even if the workflow file has changed. Invalid persisted records are skipped. Explicitly cancelling an instruction removes that run; denying an approval marks it cancelled; dismissing a dialog leaves it resumable. The chat webview only displays host-generated progress and never decides workflow transitions.
+
+This milestone is a basic host-side execution UI, not an LLM-driven workflow planner. Instruction text is displayed to the user; the runtime does not automatically execute instructions or invoke tools. The approval checkpoint is separate from the existing per-tool approval gate.
+
+
+## Saved run behavior
+
+Run persistence is separate from conversation persistence. It stores workflow definitions and progress in VS Code extension global state so a run can be resumed after restarting VS Code. The store validates each snapshot on read, checks status/step/outcome consistency, clones nested data, and enforces a 10-run / 200 KB bound. Runs in `running`, `awaiting-approval`, or `awaiting-retry` state appear in the resume picker. Retry attempt counts are persisted and validated with the run snapshot. A resumed run uses its immutable saved definition, not a newly loaded file with the same ID. Workflow approval remains independent of per-tool approval.
+
+
+## Conditional steps
+
+A step may include an optional `condition` that references an earlier step by ID and compares its recorded outcome. Conditions are declarative JSON; they do not evaluate expressions or execute code.
+
+```json
+{
+  "id": "notify-on-denial",
+  "type": "instruction",
+  "title": "Record the decision",
+  "instructions": "Record the denied release decision and notify the release owner.",
+  "condition": { "stepId": "release-approval", "outcome": "denied" }
+}
+```
+
+The allowed expected outcomes are `completed` for instruction steps and `approved` or `denied` for approval steps. Conditions must reference an earlier step, and the outcome must be compatible with that step's type. If a condition does not match, the runtime records the step as `skipped` and advances; skipped steps remain visible in run outcomes and are persisted with the run snapshot.
+
+Approval steps cancel the workflow on denial by default. To deliberately support a denial branch, set `"onDeny": "continue"` on that approval step. This is an explicit opt-in: the denial is recorded, then subsequent conditions may route to a denial-specific instruction. A denial branch does not grant tool permissions; tools remain subject to per-invocation approval. Use the default cancel behavior unless continuing after a denied checkpoint is part of the reviewed procedure.
+
+The runtime validates condition references and types when loading a manifest, and saved-run validation checks skipped outcomes against the saved workflow definition. This feature supports only simple prior-outcome comparisons; it does not support arbitrary expressions, loops, or retries.
+
+
+## Bounded instruction retries
+
+An instruction step may declare a retry policy:
+
+```json
+{
+  "id": "verify",
+  "type": "instruction",
+  "title": "Verify deployment health",
+  "instructions": "Check the health dashboard and confirm the deployment is healthy.",
+  "retryPolicy": { "maxAttempts": 2 }
+}
+```
+
+`maxAttempts` is the **total number of attempts, including the first**, and must be an integer from 1 to 3. Omitting the policy means one attempt. When the user selects **Mark Failed**, the workflow either waits for an explicit **Retry Step** / **Cancel Workflow** decision if attempts remain, or cancels and records a terminal `failed` outcome when the budget is exhausted. Dismissing the retry decision leaves the run resumable. The attempt count is saved, validated, and reused when resuming.
+
+This is a manual retry of a checklist instruction, not an automatic retry of work. The extension displays the instruction again; it does not rerun a terminal command, tool, or model action. Approval denial behavior is unchanged, and per-tool approvals remain independent.

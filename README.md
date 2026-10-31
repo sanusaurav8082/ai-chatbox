@@ -2,32 +2,101 @@
 
 A learning-first, extensible AI chatbox and coding agent for Visual Studio Code. The goal is to build the important pieces—model adapters, the agent loop, MCP integration, and permissions—so the architecture stays understandable rather than hiding everything behind a large framework.
 
-> **Current status: Phase 1 foundation.** The extension opens a chat webview and demonstrates the UI-to-extension-host message bridge with a local echo. It does **not** call an LLM or execute tools yet.
+> **Current status: Phase 30 — MCP connection diagnostics.** AI Chatbox can connect to explicitly configured MCP servers over stdio or Streamable HTTP, inspect connection state, review stage-aware troubleshooting guidance, and manually reconnect after failures. Discovered tools are exposed to compatible models with their JSON Schemas and still require per-call approval.
 
 ## Current features
 
 - VS Code command: **AI Chatbox: Open Chat**
 - Theme-aware chat UI with Enter-to-send and Shift+Enter for a newline
-- Typed message contract and basic validation in the extension host
-- Strict starter Content Security Policy; webview has no local file resource roots
-- Architecture and milestone roadmap
-- VS Code Extension Development Host launch configuration
+- Streaming chat client support, agent Stop/cancel control, bounded conversation history, and readable errors
+- OpenAI-compatible structured tool calls routed through the agent runtime
+- Per-call approval UI showing tool arguments, with explicit one-invocation approval and deny controls
+- Accessible conversation/status announcements, keyboard-focused approval prompts, and a settings shortcut
+- Read-only workspace file listing tool with a 100-path limit
+- MCP client for stdio and Streamable HTTP, with explicit connection approval
+- MCP server status command showing connection state, transport, discovered tool count, and recent connection errors
+- Dedicated `AI Chatbox MCP` Output channel for stage-aware connection/disconnection diagnostics with bounded, actionable troubleshooting guidance
+- MCP tool discovery, JSON Schema validation, and per-call approval through the same agent runtime
+- Browse and preview MCP resources and prompt messages locally; content is bounded and is not automatically sent to the model
+- Explicitly attach a reviewed MCP resource or prompt to the next chat message after a confirmation step; attached content is bounded, labeled untrusted, and not saved as conversation history
+- Surface MCP resource and prompt changes in diagnostics; automatically refresh discovered tool schemas after tool-list notifications without automatically reading resource content or sending it to the model
+- HTTPS enforcement for remote MCP endpoints; localhost HTTP is allowed for development
+- MCP bearer tokens stored in VS Code SecretStorage, not settings
+- OpenAI API support with credentials stored in VS Code SecretStorage
+- OpenAI-compatible local endpoint support (for example, Ollama or LM Studio when its OpenAI-compatible API is enabled)
+- Configurable provider, model ID, endpoint, and request timeout
+- Strict webview Content Security Policy; webview has no local file resource roots
+- Focused tests for endpoint validation, streaming, missing credentials, and HTTP errors
+- Agent runtime with model adapter interface, tool registry, argument validation, explicit permission service, iteration/output/history bounds, and cancellation
+- Safe default permission implementation that denies tool calls unless an approval decision explicitly allows them
+- Deterministic fake-model tests for tool execution, denial, invalid arguments, unknown tools, cancellation, and limits
+- Optional versioned JSON skills loaded from workspace/user locations, validated and selected by keyword overlap; skill loading is disabled by default
+- Versioned workflow/SOP definitions with bounded loading and explicit approval checkpoints
+- Live workflow progress cards in chat and validated run snapshots that can be resumed after restarting VS Code
+- Opt-in local Markdown/text knowledge retrieval with bounded lexical search and source-path context
+- Documented extension seams, security invariants, and compatibility expectations (there is not yet a stable third-party TypeScript plugin API)
 
 ## Prerequisites
 
-- Node.js 20 or newer (Node.js 20 LTS is a good baseline)
+- Node.js 20 or newer
 - npm
 - Visual Studio Code
+- Either an OpenAI API key, or a running model server exposing an OpenAI-compatible Chat Completions API
 
 ## Run locally
 
 ```bash
 npm install
 npm run check-types
+npm test
 npm run build
 ```
 
 Then open this folder in VS Code, press **F5**, and in the Extension Development Host run **AI Chatbox: Open Chat** from the Command Palette.
+
+### Option A: use a local model (default)
+
+Start a local model server with its OpenAI-compatible API enabled. The defaults target Ollama's OpenAI-compatible endpoint:
+
+- `aiChatbox.provider`: `openai-compatible`
+- `aiChatbox.baseUrl`: `http://localhost:11434/v1`
+- `aiChatbox.modelId`: set this to a model ID available from your server, for example `qwen2.5-coder:7b`
+
+These values are VS Code settings; the model must already be installed and the server must be running. If you use LM Studio or another compatible server, set `aiChatbox.baseUrl` to its local API base URL and use the model ID it expects.
+
+### Option B: use OpenAI
+
+1. Set `aiChatbox.provider` to `openai`.
+2. Run **AI Chatbox: Set OpenAI API Key** from the Command Palette and enter your key.
+3. Set `aiChatbox.modelId` to a model available to your API account.
+4. Open the chat and send a message.
+
+Use **AI Chatbox: Clear OpenAI API Key** to remove the stored key. The key is stored with VS Code `SecretStorage`, not in settings or the webview. API usage may incur charges according to your provider's terms.
+
+### MCP servers
+
+MCP servers are **not** started automatically. Add named entries to `aiChatbox.mcpServers` in VS Code `settings.json`, review the command or URL, and run **AI Chatbox: Connect MCP Server**. The extension shows a confirmation dialog before it starts a local process or contacts a remote server. Connection approval is separate from tool approval: each invocation still requires explicit approval in chat.
+
+A stdio entry uses `transport: "stdio"`, `command`, optional `args`, `cwd`, and `env`. A remote entry uses `transport: "streamable-http"` and `url`. Remote endpoints must use HTTPS; plain HTTP is accepted only for localhost. Do not put tokens in settings or URLs. For a bearer-authenticated HTTP server, run **AI Chatbox: Set MCP Server Bearer Token**; credentials are stored in VS Code SecretStorage. Use **AI Chatbox: Clear MCP Server Bearer Token** to delete a stored token and **AI Chatbox: Disconnect MCP Server** to close a connection. Run **AI Chatbox: Show MCP Server Status** to inspect configured servers and discovered tool counts, or **AI Chatbox: Show MCP Diagnostics** to open the `AI Chatbox MCP` Output channel. Endpoint query strings and fragments are omitted from diagnostic summaries.
+
+Only connect to servers you trust: an MCP server may access data or perform operations available to its process. OAuth flows, external config importers, resources, and prompts remain follow-up work.
+
+### Local knowledge
+
+Local knowledge retrieval is disabled by default. Set `aiChatbox.knowledgeEnabled` to `true` to include relevant excerpts from Markdown/text files in `.ai-chatbox/knowledge/` and the extension's user-storage `knowledge/` directory. The extension builds a bounded lexical index per request and adds up to five relevant excerpts as untrusted context. No embedding service or persistent index is used. When enabled, retrieved text is sent to the configured model provider. Review the files you add and keep sensitive content out of these folders. See [the knowledge guide](docs/KNOWLEDGE.md) and [example runbook](docs/examples/knowledge/release-runbook.md).
+
+### Settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `aiChatbox.provider` | `openai-compatible` | `openai-compatible` or `openai` |
+| `aiChatbox.modelId` | `qwen2.5-coder:7b` | Model identifier sent to the endpoint |
+| `aiChatbox.baseUrl` | `http://localhost:11434/v1` | Base URL for compatible endpoints; ignored for OpenAI |
+| `aiChatbox.requestTimeoutMs` | `120000` | Request timeout, from 1 to 300 seconds |
+| `aiChatbox.showWelcomeMessage` | `true` | Show initial setup guidance |
+| `aiChatbox.skillsEnabled` | `false` | Opt in to loading skills from workspace and user storage |
+| `aiChatbox.knowledgeEnabled` | `false` | Opt in to retrieving relevant Markdown/text excerpts from workspace and user knowledge folders |
+| `aiChatbox.workflowsEnabled` | `false` | Opt in to loading workflows from workspace and user storage |
 
 To rebuild automatically while editing:
 
@@ -35,27 +104,55 @@ To rebuild automatically while editing:
 npm run watch
 ```
 
-To package an installable VSIX (after building):
+To package an installable VSIX:
 
 ```bash
 npm run package
 ```
 
-The generated `.vsix` is a local build artifact and is intentionally excluded from Git.
+This runs type-checking and the production build, then creates `ai-chatbox-0.5.0.vsix`. The package excludes development sources and test-only bundles; runtime dependencies are bundled into `dist/extension.js`. Install it from the command line with:
+
+```bash
+code --install-extension ./ai-chatbox-0.5.0.vsix
+```
+
+Alternatively, open the VS Code Extensions view, select **… → Install from VSIX…**, and choose the file. Reload VS Code if prompted. See [the installation and smoke-test guide](docs/INSTALLATION.md). CI also packages the VSIX, checks its required contents, and uploads it as an artifact. The generated `.vsix` is intentionally excluded from Git. The chat UI includes keyboard-visible focus, a live conversation region, status announcements, and explicit approve-once/deny controls; screen-reader behavior should still be verified in the target VS Code environment.
+
+### Workflows and SOPs
+
+Workflow loading is disabled by default. Set `aiChatbox.workflowsEnabled` to `true`, then use **AI Chatbox: Run Workflow**. Workflow progress appears in the chat panel when it is open. If a dialog is dismissed, use **AI Chatbox: Resume Workflow** to continue from the saved workflow version and step. Up to 10 validated run snapshots are persisted in extension global state (bounded to 200 KB total). Workflow steps display instructions and approval checkpoints only; they do not execute arbitrary code or grant tool permissions. Instruction steps can opt into a bounded manual retry policy (`maxAttempts` 1–3, including the first attempt); a failed instruction requires an explicit retry/cancel choice and does not automatically rerun tools or commands. See [the workflow guide](docs/WORKFLOWS.md).
+
+### Skills
+
+Skill loading is disabled by default. To opt in, set `aiChatbox.skillsEnabled` to `true`. Workspace manifests go in `.ai-chatbox/skills/*.json`; user manifests go in the AI Chatbox extension global-storage `skills/` directory. See [the skills guide](docs/SKILLS.md) and [example manifest](docs/examples/typescript-debugging.skill.json). Skills are untrusted text guidance: the loader does not execute scripts or add tools, and every tool invocation still requires approval.
 
 ## Project layout
 
 ```text
 src/
-  extension.ts      Extension activation and command registration
-  chatView.ts       Webview panel, message bridge, starter UI
+  extension.ts      Extension activation and secure key commands
+  chatView.ts       Webview panel, message bridge, streaming UI
+  modelClient.ts    OpenAI-compatible HTTP/SSE chat client
+  agentModelAdapter.ts  Structured Chat Completions tool-call adapter
+  agentRuntime.ts   Model/tool loop, event contract, tool registry, permission gates
+  mcpManager.ts     MCP connection lifecycle, tool discovery, schema validation
+  workflowRuntime.ts Versioned workflow definitions and approval-gated state machine
+  workflowRunStore.ts Validated, bounded workflow run persistence
+test/
+  modelClient.test.cjs   Focused model client tests
+  agentRuntime.test.cjs  Deterministic agent runtime tests
+  agentModelAdapter.test.cjs  Structured tool-call adapter tests
+  mcpManager.test.cjs    MCP configuration and safety tests
+  workflowRuntime.test.cjs Workflow validation and approval-transition tests
+  workflowRunStore.test.cjs Persistence validation and resume-state tests
 docs/
   ARCHITECTURE.md   Runtime boundaries and security principles
   ROADMAP.md        Incremental implementation plan
+  WORKFLOWS.md      Workflow manifest and runtime contract
 .vscode/
   launch.json       F5 Extension Development Host configuration
   tasks.json        Build task
-esbuild.mjs         Extension bundler
+esbuild.mjs         Extension and testable model client bundler
 package.json        VS Code manifest and developer scripts
 ```
 
@@ -65,29 +162,26 @@ package.json        VS Code manifest and developer scripts
 - The webview is an untrusted presentation layer; it must not hold API keys or execute tools.
 - Model output and tool requests will pass through an explicit agent runtime and host-side policy checks.
 - Discovering an MCP server will not automatically authorize connecting to it or executing its tools.
-- Secrets will use VS Code `SecretStorage`, not source control, webview state, or ordinary settings.
+- Secrets use VS Code `SecretStorage`, not source control, webview state, or ordinary settings.
 - Keep each milestone buildable, tested, and documented.
 
-Read [the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/ROADMAP.md) before starting the next phase.
+Read [the architecture](docs/ARCHITECTURE.md), [extension interfaces and compatibility policy](docs/EXTENSION-INTERFACES.md), and [the roadmap](docs/ROADMAP.md) before starting the next phase.
 
 ## Development scripts
 
 | Script | Purpose |
 | --- | --- |
-| `npm run build` | Bundle the extension to `dist/extension.js` |
-| `npm run watch` | Watch and rebuild extension sources |
+| `npm run build` | Bundle the extension and model client to `dist/` |
+| `npm run watch` | Watch and rebuild TypeScript sources |
 | `npm run check-types` | Run the TypeScript type checker |
-| `npm test` | Run Node's built-in test runner |
+| `npm test` | Build the model client and run focused tests |
 | `npm run package` | Type-check, build, and create a VSIX |
 
 ## Planned work
 
-1. Multi-provider model layer (cloud and OpenAI-compatible local endpoints)
-2. Streaming, conversation state, cancellation, and error handling
-3. A transparent agent loop with tool approval and execution limits
-4. MCP client: stdio first, then Streamable HTTP
-5. MCP configuration importers, VSIX distribution, and CI
-6. Skills, SOP/workflows, and knowledge retrieval
+1. Improve MCP connection health reporting and deliberate reconnection; manually verify the packaged VSIX
+2. Conversation persistence and richer settings/approval UX
+3. Richer knowledge source providers and optional semantic/vector retrieval
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for acceptance criteria and status.
 

@@ -2,21 +2,126 @@
   "name": "ai-chatbox",
   "displayName": "AI Chatbox",
   "description": "A learning-first, extensible AI chatbox and coding agent for VS Code.",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "publisher": "sanusaurav8082",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sanusaurav8082/ai-chatbox.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Other", "Machine Learning"],
-  "keywords": ["ai", "chat", "agent", "mcp", "llm"],
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "ai",
+    "chat",
+    "agent",
+    "mcp",
+    "llm"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onCommand:aiChatbox.open"],
+  "activationEvents": [
+    "onCommand:aiChatbox.open",
+    "onCommand:aiChatbox.setOpenAiApiKey",
+    "onCommand:aiChatbox.clearOpenAiApiKey",
+    "onCommand:aiChatbox.connectMcpServer",
+    "onCommand:aiChatbox.reconnectMcpServer",
+    "onCommand:aiChatbox.disconnectMcpServer",
+    "onCommand:aiChatbox.setMcpServerToken",
+    "onCommand:aiChatbox.clearMcpServerToken",
+    "onCommand:aiChatbox.showMcpServerStatus",
+    "onCommand:aiChatbox.showMcpDiagnostics",
+    "onCommand:aiChatbox.browseMcpResources",
+    "onCommand:aiChatbox.browseMcpPrompts",
+    "onCommand:aiChatbox.clearConversation",
+    "onCommand:aiChatbox.runWorkflow",
+    "onCommand:aiChatbox.resumeWorkflow",
+    "onCommand:aiChatbox.showWorkflowDiagnostics",
+    "onCommand:aiChatbox.attachMcpResource",
+    "onCommand:aiChatbox.attachMcpPrompt",
+    "onCommand:aiChatbox.clearMcpContext"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "aiChatbox.open",
         "title": "AI Chatbox: Open Chat"
+      },
+      {
+        "command": "aiChatbox.setOpenAiApiKey",
+        "title": "AI Chatbox: Set OpenAI API Key"
+      },
+      {
+        "command": "aiChatbox.clearOpenAiApiKey",
+        "title": "AI Chatbox: Clear OpenAI API Key"
+      },
+      {
+        "command": "aiChatbox.connectMcpServer",
+        "title": "AI Chatbox: Connect MCP Server"
+      },
+      {
+        "command": "aiChatbox.reconnectMcpServer",
+        "title": "AI Chatbox: Reconnect MCP Server"
+      },
+      {
+        "command": "aiChatbox.disconnectMcpServer",
+        "title": "AI Chatbox: Disconnect MCP Server"
+      },
+      {
+        "command": "aiChatbox.setMcpServerToken",
+        "title": "AI Chatbox: Set MCP Server Bearer Token"
+      },
+      {
+        "command": "aiChatbox.clearMcpServerToken",
+        "title": "AI Chatbox: Clear MCP Server Bearer Token"
+      },
+      {
+        "command": "aiChatbox.showMcpServerStatus",
+        "title": "AI Chatbox: Show MCP Server Status"
+      },
+      {
+        "command": "aiChatbox.showMcpDiagnostics",
+        "title": "AI Chatbox: Show MCP Diagnostics"
+      },
+      {
+        "command": "aiChatbox.browseMcpResources",
+        "title": "AI Chatbox: Browse MCP Resources"
+      },
+      {
+        "command": "aiChatbox.browseMcpPrompts",
+        "title": "AI Chatbox: Browse MCP Prompts"
+      },
+      {
+        "command": "aiChatbox.clearConversation",
+        "title": "AI Chatbox: Clear Saved Conversation"
+      },
+      {
+        "command": "aiChatbox.runWorkflow",
+        "title": "AI Chatbox: Run Workflow"
+      },
+      {
+        "command": "aiChatbox.resumeWorkflow",
+        "title": "AI Chatbox: Resume Workflow"
+      },
+      {
+        "command": "aiChatbox.showWorkflowDiagnostics",
+        "title": "AI Chatbox: Show Workflow Diagnostics"
+      },
+      {
+        "command": "aiChatbox.attachMcpResource",
+        "title": "AI Chatbox: Attach MCP Resource to Next Message"
+      },
+      {
+        "command": "aiChatbox.attachMcpPrompt",
+        "title": "AI Chatbox: Attach MCP Prompt to Next Message"
+      },
+      {
+        "command": "aiChatbox.clearMcpContext",
+        "title": "AI Chatbox: Clear Pending MCP Context"
       }
     ],
     "configuration": {
@@ -26,6 +131,93 @@
           "type": "boolean",
           "default": true,
           "description": "Show the welcome message when the chat opens."
+        },
+        "aiChatbox.provider": {
+          "type": "string",
+          "enum": [
+            "openai-compatible",
+            "openai"
+          ],
+          "default": "openai-compatible",
+          "description": "Model API provider. Local endpoints should implement the OpenAI Chat Completions API."
+        },
+        "aiChatbox.modelId": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Model ID sent to the selected provider."
+        },
+        "aiChatbox.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434/v1",
+          "description": "Base URL for an OpenAI-compatible endpoint; ignored for the OpenAI provider."
+        },
+        "aiChatbox.requestTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Maximum time to wait for a model response, in milliseconds."
+        },
+        "aiChatbox.mcpServers": {
+          "type": "object",
+          "default": {},
+          "description": "Named MCP server configurations. Servers are not started or connected until you explicitly run AI Chatbox: Connect MCP Server and approve the reviewed configuration.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "transport": {
+                "type": "string",
+                "enum": [
+                  "stdio",
+                  "streamable-http"
+                ]
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "transport"
+            ]
+          }
+        },
+        "aiChatbox.skillsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Load JSON skills from .ai-chatbox/skills in open workspaces and the AI Chatbox user storage directory, then include matching instructions in model context. Skill instructions are untrusted text."
+        },
+        "aiChatbox.persistConversation": {
+          "type": "boolean",
+          "default": false,
+          "description": "Persist bounded conversation history in workspace state. Disabled by default because prompts and model responses may contain sensitive information."
+        },
+        "aiChatbox.knowledgeEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to retrieving relevant Markdown/text files from .ai-chatbox/knowledge and the AI Chatbox user storage knowledge directory. Retrieved content is sent to the configured model as untrusted context."
+        },
+        "aiChatbox.workflowsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to loading versioned JSON workflows from workspace .ai-chatbox/workflows and the AI Chatbox user storage workflows directory. Workflows only provide instructions and approval checkpoints; tool calls still require separate approval."
         }
       }
     }
@@ -35,14 +227,21 @@
     "watch": "node esbuild.mjs --watch",
     "check-types": "tsc --noEmit",
     "vscode:prepublish": "npm run check-types && npm run build",
-    "package": "npm run vscode:prepublish && vsce package",
-    "test": "node --test"
+    "package": "vsce package --no-dependencies",
+    "test": "npm run build && node --test test/*.test.cjs",
+    "test:integration": "npm run build && node test/integration/runTest.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "@vscode/test-electron": "^2.5.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ajv": "^8.17.1",
+    "zod": "^4.1.12"
   }
 }
